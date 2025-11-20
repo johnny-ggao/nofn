@@ -89,7 +89,7 @@ class DecisionMaker:
             cprint("🧠 LLM 开始分析决策...", "cyan")
             cprint("=" * 70, "cyan")
 
-            # 构建完整的上下文（一次性传递所有数据）
+            # 构建完整的上下文
             context = self._build_context(market_snapshot, memory_context)
 
             # 构建消息

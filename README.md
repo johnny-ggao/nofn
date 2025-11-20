@@ -117,13 +117,13 @@ risk:
 
 ```bash
 # 启动交易系统
-uv run python main_new.py
+uv run python main.py
 
 # 运行指定次数后停止
-uv run python main_new.py --max-iterations 10
+uv run python main.py --max-iterations 10
 
 # 查看帮助
-uv run python main_new.py --help
+uv run python main.py --help
 ```
 
 ## 📖 架构详解
@@ -457,16 +457,16 @@ risk:
 
 ```bash
 # 基础运行
-uv run python main_new.py
+uv run python main.py
 
 # 运行指定次数
-uv run python main_new.py --max-iterations 10
+uv run python main.py --max-iterations 10
 
 # 自定义配置文件
-uv run python main_new.py --config path/to/config.yaml
+uv run python main.py --config path/to/config.yaml
 
 # 查看帮助
-uv run python main_new.py --help
+uv run python main.py --help
 ```
 
 ## 💡 常见问题
