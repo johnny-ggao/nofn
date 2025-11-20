@@ -1,0 +1,73 @@
+services:
+  nofn-agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      platforms:
+        - linux/amd64
+      args:
+        BUILDPLATFORM: linux/amd64
+    platform: linux/amd64
+    container_name: nofn-trading-agent
+    restart: unless-stopped
+
+    # 环境变量配置
+    environment:
+      # LLM 配置
+      - LLM_PROVIDER=${LLM_PROVIDER:-deepseek}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+
+      # 交易所配置
+      - HYPERLIQUID_PRIVATE_KEY=${HYPERLIQUID_PRIVATE_KEY}
+      - HYPERLIQUID_WALLET_ADDRESS=${HYPERLIQUID_WALLET_ADDRESS}
+
+      # 运行配置
+      - TZ=Asia/Shanghai
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+      # LangChain v1.0 特性
+      # 消息摘要功能已在 config.yaml 中配置，这里无需额外环境变量
+
+    # 数据持久化
+    # 注意：LangChain v1.0 使用内存存储(InMemoryChatMessageHistory)
+    # 不再需要挂载 checkpoint 数据库，显著减少磁盘使用
+    volumes:
+      - ./config:/app/config:ro  # 只读挂载配置文件
+      - ./logs:/app/logs          # 日志持久化
+      # data 目录保留用于未来可能的持久化需求（如切换到 SQLite）
+
+    # 资源限制
+    # LangChain v1.0 + 消息摘要功能后，内存需求大幅降低
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1.5G      # 从 2G 降至 1.5G（内存优化）
+        reservations:
+          cpus: '0.5'
+          memory: 384M      # 从 512M 降至 384M
+
+    # 网络配置
+    networks:
+      - nofn-network
+
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"        # 从 3 增加到 5，保留更多日志
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  nofn-network:
+    driver: bridge

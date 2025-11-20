@@ -1,0 +1,94 @@
+# NoFn Trading System - 配置文件示例
+# ==========================================
+#
+# 使用说明：
+# 1. 复制此文件: cp config.yaml.example config.yaml
+# 2. 填写实际的 API 密钥和配置
+# 3. config.yaml 已在 .gitignore 中，不会被提交到版本控制
+#
+# ⚠️ 重要安全提示:
+# - 私钥泄露将导致资金损失
+# - 永远不要提交包含真实密钥的配置文件
+# - 建议使用专用交易账户，不要放置大额资金
+# ==========================================
+
+# LLM 配置
+llm:
+  # 支持的 provider: "deepseek", "openai", "anthropic"
+  provider: "deepseek"
+  model: "deepseek-chat"
+
+  # API 密钥
+  # DeepSeek: https://platform.deepseek.com/api_keys
+  # OpenAI: https://platform.openai.com/api-keys
+  # Anthropic: https://console.anthropic.com/
+  api_key: "your_api_key_here"
+
+  # API 基础 URL（可选）
+  base_url: "https://api.deepseek.com"
+
+  # 温度参数 (0.0-2.0)
+  temperature: 0.7
+
+# 交易所配置
+exchanges:
+  hyperliquid:
+    # 钱包地址 (0x...)
+    api_key: "your_wallet_address_here"
+
+    # 私钥 (0x... 64位十六进制)
+    api_secret: "your_private_key_here"
+
+    # 是否使用测试网
+    testnet: false
+
+# 策略运行配置
+strategy:
+  # 使用的交易所
+  exchange: "hyperliquid"
+
+  # 监控的交易对列表
+  symbols:
+    - "BTC/USDC:USDC"
+    - "ETH/USDC:USDC"
+    - "SOL/USDC:USDC"
+
+  # 循环间隔（秒）
+  interval_seconds: 180
+
+  # 最大迭代次数（null = 无限循环）
+  max_iterations: null
+
+# 日志配置
+logging:
+  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+
+  # 日志文件路径
+  file: "logs/trading.log"
+
+  # 日志轮转周期 (1 day, 1 week, 500 MB, etc.)
+  rotation: "1 day"
+
+  # 日志保留时间
+  retention: "30 days"
+
+  # 日志压缩格式 (zip, gz, tar.gz)
+  compression: "zip"
+
+  # 是否启用调试模式
+  debug: false
+
+# 风险管理配置
+risk:
+  # 最大持仓金额（USDT）
+  max_position_size: 10000.0
+
+  # 最大杠杆倍数
+  max_leverage: 10
+
+  # 每日最大交易次数
+  max_daily_trades: 50
+
+  # 是否启用风控检查
+  enable_risk_check: true

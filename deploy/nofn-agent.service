@@ -1,0 +1,24 @@
+[Unit]
+Description=NoFn Trading Agent Container
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+User=%i
+Group=docker
+Restart=always
+RestartSec=10
+TimeoutStartSec=0
+
+# 启动容器
+ExecStart=/usr/bin/docker start -a nofn-trading-agent
+
+# 停止容器
+ExecStop=/usr/bin/docker stop -t 30 nofn-trading-agent
+
+# 确保容器停止
+ExecStopPost=/usr/bin/docker stop -t 2 nofn-trading-agent
+
+[Install]
+WantedBy=multi-user.target

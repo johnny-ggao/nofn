@@ -1,0 +1,348 @@
+"""
+交易执行引擎 (Layer 1)
+
+确定性交易引擎 - 不涉及LLM推理
+- 批量获取市场数据
+- 批量计算技术指标
+- 执行交易订单
+
+设计原则:
+- 快速: 毫秒级响应
+- 可靠: 确定性输出
+- 高效: 批量操作，减少API调用
+"""
+import asyncio
+from typing import List, Dict, Optional
+from decimal import Decimal
+from datetime import datetime
+
+from termcolor import cprint
+
+from ..adapters.base import BaseExchangeAdapter
+from ..models import Position, PositionSide, OrderType, Candle
+from ..utils.indicators import ema, rsi, macd, atr, obv, stochastic_oscillator
+from .market_snapshot import MarketSnapshot, AssetData, IndicatorData
+
+
+class TradingEngine:
+    """
+    确定性交易引擎
+
+    职责:
+    1. 批量获取市场数据（价格、K线、持仓等）
+    2. 批量计算技术指标（numpy操作，毫秒级）
+    3. 执行交易订单（直接调用adapter）
+    4. 管理数据缓存
+    """
+
+    def __init__(self, adapter: BaseExchangeAdapter):
+        self.adapter = adapter
+        self._cache: Dict[str, any] = {}
+        self._cache_ttl = 10  # 缓存10秒
+
+    async def get_market_snapshot(self, symbols: List[str]) -> MarketSnapshot:
+        """
+        批量获取市场快照
+
+        一次性获取所有需要的数据，避免多次API调用
+
+        Args:
+            symbols: 交易对列表
+
+        Returns:
+            MarketSnapshot: 完整的市场快照
+        """
+        try:
+            cprint(f"📊 获取市场快照: {', '.join(symbols)}", "cyan")
+
+            tasks = []
+            for symbol in symbols:
+                tasks.append(self._get_asset_data(symbol))
+
+            # 同时获取账户信息
+            tasks.append(self._get_account_data())
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            asset_results = results[:-1]
+            account_data = results[-1]
+
+            assets = {}
+            for result in asset_results:
+                if isinstance(result, Exception):
+                    cprint(f"⚠️  获取资产数据失败: {result}", "yellow")
+                    continue
+                if result:
+                    assets[result.symbol] = result
+
+            if isinstance(account_data, Exception):
+                cprint(f"⚠️  获取账户数据失败: {account_data}", "yellow")
+                account_data = {
+                    'balance': Decimal('0'),
+                    'available': Decimal('0'),
+                }
+
+            # 计算总持仓市值和未实现盈亏
+            total_position_value = Decimal('0')
+            total_unrealized_pnl = Decimal('0')
+            for asset in assets.values():
+                if asset.has_position():
+                    total_position_value += asset.position_size * asset.current_price
+                    if asset.unrealized_pnl:
+                        total_unrealized_pnl += asset.unrealized_pnl
+
+            snapshot = MarketSnapshot(
+                assets=assets,
+                account_balance=account_data.get('balance', Decimal('0')),
+                account_available=account_data.get('available', Decimal('0')),
+                total_position_value=total_position_value,
+                total_unrealized_pnl=total_unrealized_pnl,
+                timestamp=datetime.now()
+            )
+
+            cprint(f"✅ 市场快照获取完成: {len(assets)} 个资产", "green")
+            return snapshot
+
+        except Exception as e:
+            cprint(f"❌ 获取市场快照失败: {e}", "red")
+            # 返回空快照
+            return MarketSnapshot(assets={})
+
+    async def _get_asset_data(self, symbol: str) -> Optional[AssetData]:
+        """获取单个资产的完整数据"""
+        try:
+            # 并发获取价格、K线、持仓
+            price_task = self.adapter.get_latest_price(symbol)
+            candles_task = self.adapter.get_candles(symbol, '1h', limit=200)
+            position_task = self.adapter.get_position(symbol)
+
+            price, candles, position = await asyncio.gather(
+                price_task, candles_task, position_task,
+                return_exceptions=True
+            )
+
+            # 处理异常
+            if isinstance(price, Exception):
+                cprint(f"⚠️  {symbol} 价格获取失败: {price}", "yellow")
+                return None
+            if isinstance(candles, Exception):
+                cprint(f"⚠️  {symbol} K线获取失败: {candles}", "yellow")
+                candles = []
+
+            # 计算技术指标
+            indicators = self._calculate_indicators(candles) if candles else IndicatorData()
+
+
+            # 构建持仓信息
+            position_size = Decimal('0')
+            position_side = None
+            entry_price = None
+            unrealized_pnl = None
+            stop_loss = None
+            take_profit = None
+
+            if position and not isinstance(position, Exception):
+                position_size = position.amount
+                position_side = position.side.value if position.side else None
+                entry_price = position.entry_price
+                unrealized_pnl = position.unrealized_pnl
+                stop_loss = position.stop_loss
+                take_profit = position.take_profit
+
+            # 构建AssetData
+            asset_data = AssetData(
+                symbol=symbol,
+                current_price=price.last_price,
+                mark_price=price.mark_price,
+                bid=price.bid_price,
+                ask=price.ask_price,
+                indicators=indicators,
+                position_size=position_size,
+                position_side=position_side,
+                entry_price=entry_price,
+                unrealized_pnl=unrealized_pnl,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                timestamp=datetime.now()
+            )
+
+            return asset_data
+
+        except Exception as e:
+            cprint(f"❌ 获取 {symbol} 数据失败: {e}", "red")
+            return None
+
+    @staticmethod
+    def _calculate_indicators(candles: List[Candle]) -> IndicatorData:
+        """
+        批量计算所有技术指标
+
+        使用numpy操作，毫秒级完成
+        """
+        if not candles or len(candles) < 50:
+            return IndicatorData()
+
+        try:
+            # 提取价格数据
+            closes = [float(c.close) for c in candles]
+            highs = [float(c.high) for c in candles]
+            lows = [float(c.low) for c in candles]
+            volumes = [float(c.volume) for c in candles]
+
+            # 批量计算指标（返回数组，需要提取最后一个值）
+            ema20_arr = ema(closes, 20)
+            ema50_arr = ema(closes, 50)
+            ema200_arr = ema(closes, 200) if len(closes) >= 200 else None
+
+            # 提取最新值（数组的最后一个元素）
+            ema20_val = float(ema20_arr[-1]) if len(ema20_arr) > 0 else None
+            ema50_val = float(ema50_arr[-1]) if len(ema50_arr) > 0 else None
+            ema200_val = float(ema200_arr[-1]) if ema200_arr is not None and len(ema200_arr) > 0 else None
+
+            rsi14_arr = rsi(closes, 14)
+            rsi14_val = float(rsi14_arr[-1]) if len(rsi14_arr) > 0 else 50.0
+
+            # MACD 返回 (macd_line, signal_line, histogram) 三个数组
+            macd_line, signal_line, histogram = macd(closes)
+            macd_value = float(macd_line[-1]) if len(macd_line) > 0 else 0.0
+            macd_signal = float(signal_line[-1]) if len(signal_line) > 0 else 0.0
+            macd_hist = float(histogram[-1]) if len(histogram) > 0 else 0.0
+
+            atr14_arr = atr(highs, lows, closes, 14)
+            atr14_val = float(atr14_arr[-1]) if len(atr14_arr) > 0 else 0.0
+
+            obv_arr = obv(closes, volumes)
+            obv_val = float(obv_arr[-1]) if len(obv_arr) > 0 else 0.0
+
+            # Stochastic 返回 (k_values, d_values) 两个数组
+            k_values, d_values = stochastic_oscillator(highs, lows, closes, 14, 3)
+            stoch_k = float(k_values[-1]) if len(k_values) > 0 else 50.0
+            stoch_d = float(d_values[-1]) if len(d_values) > 0 else 50.0
+
+            return IndicatorData(
+                ema20=ema20_val,
+                ema50=ema50_val,
+                ema200=ema200_val,
+                rsi14=rsi14_val,
+                macd_value=macd_value,
+                macd_signal=macd_signal,
+                macd_histogram=macd_hist,
+                atr14=atr14_val,
+                obv=obv_val,
+                stoch_k=stoch_k,
+                stoch_d=stoch_d,
+            )
+
+        except Exception as e:
+            cprint(f"⚠️  指标计算失败: {e}", "yellow")
+            return IndicatorData()
+
+    async def _get_account_data(self) -> dict:
+        """获取账户数据"""
+        try:
+            balance = await self.adapter.get_balance('USDC')
+            return {
+                'balance': balance.total,
+                'available': balance.available,
+            }
+        except Exception as e:
+            cprint(f"⚠️  获取账户数据失败: {e}", "yellow")
+            return {
+                'balance': Decimal('0'),
+                'available': Decimal('0'),
+            }
+
+    async def execute_signal(self, signal: dict) -> dict:
+        """
+        执行交易信号
+
+        直接调用adapter，不涉及LLM推理
+
+        Args:
+            signal: 交易信号字典
+                {
+                    'action': 'open_long' | 'open_short' | 'close_position',
+                    'symbol': 'BTC/USDC:USDC',
+                    'amount': 0.001,
+                    'leverage': 3,
+                    'stop_loss': 88000.0,
+                    'take_profit': 96000.0,
+                }
+
+        Returns:
+            执行结果字典
+        """
+        try:
+            action = signal.get('action')
+            symbol = signal.get('symbol')
+
+            if action == 'open_long':
+                result = await self.adapter.open_position(
+                    symbol=symbol,
+                    side=PositionSide.LONG,
+                    amount=Decimal(str(signal['amount'])),
+                    order_type=OrderType.MARKET,
+                    leverage=signal.get('leverage', 1),
+                    stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
+                    take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
+                )
+                return {'success': result.status.value == 'success', 'result': result}
+
+            elif action == 'open_short':
+                result = await self.adapter.open_position(
+                    symbol=symbol,
+                    side=PositionSide.SHORT,
+                    amount=Decimal(str(signal['amount'])),
+                    order_type=OrderType.MARKET,
+                    leverage=signal.get('leverage', 1),
+                    stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
+                    take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
+                )
+                return {'success': result.status.value == 'success', 'result': result}
+
+            elif action == 'close_position':
+                result = await self.adapter.close_position(symbol=symbol)
+                return {'success': result.status.value == 'success', 'result': result}
+
+            elif action == 'set_stop_loss':
+                position = await self.adapter.get_position(symbol)
+                if position:
+                    result = await self.adapter.modify_stop_loss_take_profit(
+                        position=position.model_dump(),
+                        stop_loss=Decimal(str(signal['stop_loss'])),
+                        take_profit=None
+                    )
+                    return {'success': result.status.value == 'success', 'result': result}
+                else:
+                    return {'success': False, 'error': 'Position not found'}
+
+            elif action == 'set_take_profit':
+                position = await self.adapter.get_position(symbol)
+                if position:
+                    result = await self.adapter.modify_stop_loss_take_profit(
+                        position=position.model_dump(),
+                        stop_loss=None,
+                        take_profit=Decimal(str(signal['take_profit']))
+                    )
+                    return {'success': result.status.value == 'success', 'result': result}
+                else:
+                    return {'success': False, 'error': 'Position not found'}
+
+            elif action == 'set_stop_loss_take_profit':
+                position = await self.adapter.get_position(symbol)
+                if position:
+                    result = await self.adapter.modify_stop_loss_take_profit(
+                        position=position.model_dump(),
+                        stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
+                        take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None
+                    )
+                    return {'success': result.status.value == 'success', 'result': result}
+                else:
+                    return {'success': False, 'error': 'Position not found'}
+
+            else:
+                return {'success': False, 'error': f'Unknown action: {action}'}
+
+        except Exception as e:
+            cprint(f"❌ 执行信号失败: {e}", "red")
+            return {'success': False, 'error': str(e)}
