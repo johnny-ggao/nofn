@@ -28,9 +28,8 @@ async def run_new_architecture():
     symbols = strategy_config.symbols
 
     cprint("=" * 70, "cyan")
-    cprint("🤖 NoFn Trading System - 新架构", "cyan")
+    cprint("🤖 NoFn Trading System", "cyan")
     cprint("=" * 70, "cyan")
-    cprint(f"架构: 三层分离（执行/决策/学习）", "yellow")
     cprint(f"交易所: {exchange}", "cyan")
     cprint(f"交易对: {', '.join(symbols)}", "cyan")
     cprint(f"循环间隔: {strategy_config.interval_seconds}s ({strategy_config.interval_seconds / 60:.1f} 分钟)", "cyan")
@@ -71,7 +70,7 @@ async def run_new_architecture():
         # Layer 3: 学习层
         from src.learning import LearningGraph, MemoryManager
 
-        memory_manager = MemoryManager(storage_dir="data/memory")
+        memory_manager = MemoryManager(storage_dir="data/memory", llm=llm)
         learning_graph = LearningGraph(
             engine=engine,
             decision_maker=decision_maker,

@@ -40,14 +40,22 @@ Market Data → Retrieve Memory → Decide → Execute → Reflect → Update Me
 - **批量数据获取** - 一次 API 调用获取所有数据
 - **10+ 技术指标** - EMA、MACD、RSI、ATR、OBV、Stochastic
 - **趋势识别** - 多头/空头/中性排列
-- **持仓管理** - 自动止损止盈更新
+- **智能持仓管理** - 动态阈值自动更新止损止盈
 
-### 🧠 记忆与学习
+### 🧠 分层记忆与学习
 
-- **案例存储** - 保存每次交易的完整上下文
+- **三层记忆架构** - 短期案例、周期摘要、长期经验库
+- **智能压缩** - LLM 自动生成记忆摘要，压缩率 99.7%
+- **自动清理** - 保留有价值案例，归档历史数据
 - **相似度检索** - 基于市场条件匹配历史案例
 - **反思机制** - LLM 分析决策质量并提取经验
 - **经验积累** - 持续优化交易策略
+
+**存储效率**：
+- 短期（7天）：详细案例
+- 中期（每周）：LLM 生成的总结和模式
+- 长期：核心经验库
+- 年度存储：~3MB（vs 原始 982MB）
 
 ### 🤖 LLM 增强决策
 
@@ -221,9 +229,26 @@ workflow.add_edge("update_memory", END)
 - LLM 反思总结
 - 经验提取和存储
 
-### 记忆系统
+### 分层记忆系统
 
-**存储结构**：
+**三层架构**：
+
+1. **短期记忆（7天）**
+   - 存储详细的交易案例
+   - 包含完整市场条件、决策、执行结果
+   - 用于实时决策参考
+
+2. **中期记忆（每周摘要）**
+   - LLM 自动生成周度总结
+   - 提取关键模式、成功策略、失败教训
+   - 压缩 ~50 个案例 → 1 个摘要
+
+3. **长期记忆（核心经验库）**
+   - 历史摘要归档
+   - 持久化核心交易模式
+   - 跨周期策略优化
+
+**存储结构 - 详细案例**：
 ```json
 {
   "case_id": "case_1234567890",
@@ -234,24 +259,48 @@ workflow.add_edge("update_memory", END)
   "decision": "LLM 的完整分析...",
   "execution_result": [...],
   "reflection": "反思内容...",
-  "lessons_learned": [
-    "经验1",
-    "经验2"
-  ],
+  "lessons_learned": ["经验1", "经验2"],
   "timestamp": "2025-11-20T..."
 }
 ```
 
-**检索机制**：
+**存储结构 - 周度摘要**：
+```json
+{
+  "summary_id": "weekly_20251120",
+  "period": "2025-11-13 ~ 2025-11-20",
+  "statistics": {
+    "total_trades": 15,
+    "win_rate": 0.67,
+    "sharpe_ratio": 1.8
+  },
+  "key_patterns": [
+    "BTC在90k支撑位反弹概率高",
+    "夜间波动率通常较低"
+  ],
+  "successful_strategies": [
+    "趋势跟随 + 动态止盈"
+  ],
+  "lessons": [
+    "震荡市场减少开仓频率",
+    "止损不宜设置过紧"
+  ],
+  "market_insights": "本周市场呈现区间震荡..."
+}
+```
+
+**检索与压缩**：
 - 基于市场条件的相似度匹配
-- 提取最相关的历史案例
-- 为 LLM 提供上下文
+- 智能清理：保留近期 + 有交易的旧案例
+- 自动归档：按月分组历史数据
+- 压缩效率：99.7%（982MB → 3MB/年）
 
 ## 📁 项目结构
 
 ```
 nofn/
-├── main_new.py                # 新架构入口点 ⭐
+├── main.py                    # 系统入口点 ⭐
+├── generate_summary.py        # 记忆摘要生成工具
 ├── config/
 │   ├── config.yaml.example    # 配置模板
 │   └── config.yaml           # 实际配置（不提交）
@@ -274,7 +323,11 @@ nofn/
 │       └── config.py                 # 配置管理
 └── data/
     └── memory/
-        └── cases.json                # 交易案例存储
+        ├── cases.json                # 交易案例存储（短期）
+        ├── summaries.json            # 记忆摘要（中期）
+        └── archives/                 # 历史归档（长期）
+            ├── cases_202511.json     # 2025年11月案例
+            └── cases_202512.json     # 2025年12月案例
 ```
 
 ## 🔄 系统工作流
@@ -337,9 +390,10 @@ nofn/
    - 所有开仓信号必须包含止损
    - 推荐风险回报比 >= 1:2
 
-2. **持仓监控**
+2. **智能持仓监控**
    - 自动检测缺失的止损止盈
-   - hold 信号会更新不完整的 SL/TP
+   - 动态阈值防止频繁微调
+   - 只在价格显著变化时更新（>0.3%）
 
 3. **杠杆限制**
    - 配置最大杠杆（默认 10x）
@@ -347,23 +401,35 @@ nofn/
 
 4. **仓位限制**
    - 最大持仓金额控制
-   - 每日交易次数限制
+   - 每日交易次数限制（仅计算真实交易）
 
-### 自动保护机制
+### 智能止损止盈更新
+
+系统使用**动态阈值机制**避免频繁调整：
 
 ```python
-# hold 信号的智能处理
+# 智能阈值计算
+current_price = 90000.0  # BTC 当前价格
+min_threshold = max(1.0, current_price * 0.003)  # 270 美元
+
+# 只在显著变化时更新
 if signal.action == 'hold':
-    # 检查当前持仓的止损止盈
-    if 止损缺失 or 止盈缺失:
-        # 自动更新
-        await engine.execute_signal({
-            'action': 'set_stop_loss_take_profit',
-            'symbol': symbol,
-            'stop_loss': signal.stop_loss,
-            'take_profit': signal.take_profit
-        })
+    if stop_loss_missing:
+        # 缺失止损 → 立即添加
+        update_stop_loss()
+    elif abs(new_sl - current_sl) > min_threshold:
+        # 差异 > 270 美元 → 更新
+        update_stop_loss()
+    else:
+        # 微小差异 → 保持稳定
+        keep_current_stop_loss()
 ```
+
+**效果**：
+- 避免 LLM 微小差异导致的频繁更新
+- 减少不必要的 API 调用
+- 提升系统稳定性
+- 降低交易成本
 
 ## 🔧 技术指标
 
@@ -382,16 +448,20 @@ if signal.action == 'hold':
 
 ### 账户统计
 
-系统实时追踪：
+系统实时追踪（**仅计算真实交易**）：
 - 夏普比率（Sharpe Ratio）
 - 总收益率
 - 胜率
 - 平均盈亏
 - 最大回撤
+- **交易频率**（不含止损止盈修改）
+
+**注意**：`hold` 和 `set_stop_loss_take_profit` 动作不计入交易统计，避免夸大交易频率。
 
 ### 学习进度
 
-- 已保存案例数
+- 已保存案例数（自动清理 > 1000）
+- 历史摘要数量
 - 经验教训数量
 - 决策质量趋势
 
@@ -443,6 +513,16 @@ strategy:
   max_iterations: null   # null = 无限运行
 ```
 
+### 记忆管理配置
+
+```yaml
+memory:
+  max_cases: 1000           # 最大保留案例数
+  keep_recent_days: 30      # 保留最近N天的所有案例
+  enable_auto_cleanup: true # 启用自动清理
+  enable_archiving: true    # 启用归档功能
+```
+
 ### 风险配置
 
 ```yaml
@@ -454,6 +534,8 @@ risk:
 ```
 
 ## 🚀 命令行选项
+
+### 运行交易系统
 
 ```bash
 # 基础运行
@@ -467,6 +549,16 @@ uv run python main.py --config path/to/config.yaml
 
 # 查看帮助
 uv run python main.py --help
+```
+
+### 生成记忆摘要
+
+```bash
+# 手动生成每周摘要
+uv run python generate_summary.py
+
+# 查看摘要详情
+cat data/memory/summaries.json | jq .
 ```
 
 ## 💡 常见问题
@@ -491,7 +583,23 @@ A: 是的！系统会：
 A: 目前只支持 Hyperliquid，但架构设计支持扩展。实现 `BaseExchangeAdapter` 接口即可添加新交易所。
 
 **Q: 记忆会占用多少空间？**
-A: 每个案例约 5-10KB，1000 个案例约 5-10MB。系统暂无自动清理机制。
+A: 系统采用分层记忆架构：
+- 短期（7天）：约 5-10MB
+- 中期摘要：约 100-200KB
+- 长期归档：自动归档，按月分组
+- **总存储（1年）**：约 3MB（vs 未压缩的 982MB）
+
+系统会**自动清理和归档**：
+- 保留最近 30 天的所有案例
+- 旧案例只保留有交易执行的
+- 被清理的案例归档到 `data/memory/archives/`
+- 每周自动生成 LLM 摘要
+
+**Q: 如何生成记忆摘要？**
+A: 系统会自动在需要时生成摘要，也可以手动执行：
+```bash
+uv run python generate_summary.py
+```
 
 ## 📚 扩展开发
 

@@ -182,8 +182,9 @@ class DecisionMaker:
         lines.append("  * 必须检查当前持仓的止损止盈是否完整")
         lines.append("  * 如果止损缺失，必须在信号中提供合理的stop_loss")
         lines.append("  * 如果止盈缺失，必须在信号中提供合理的take_profit")
-        lines.append("  * 如果止损止盈都存在，可以根据市场变化进行优化调整")
-        lines.append("  * 系统会自动对比并更新与当前不同的止损止盈")
+        lines.append("  * **如果止损止盈都已设置且合理，保持不变（直接使用当前值）**")
+        lines.append("  * **只在显著变化时才调整**（如价格变化>1%，或风险明显增加）")
+        lines.append("  * 避免频繁微调，稳定性比完美更重要")
         lines.append("- confidence 表示信心度 (0-100)")
         lines.append("- 如果决定观望，action 填 'wait'")
 

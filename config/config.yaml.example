@@ -92,3 +92,17 @@ risk:
 
   # 是否启用风控检查
   enable_risk_check: true
+
+# 记忆管理配置
+memory:
+  # 最大保留案例数
+  max_cases: 1000
+
+  # 保留最近N天的所有案例
+  keep_recent_days: 30
+
+  # 是否启用自动清理
+  enable_auto_cleanup: true
+
+  # 是否归档被清理的案例
+  enable_archiving: true

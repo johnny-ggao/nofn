@@ -190,17 +190,33 @@ class LearningGraph:
                         signal_tp = float(signal.take_profit) if signal.take_profit else None
 
                         # 判断是否需要更新止损止盈
-                        # 考虑精度：只有当差异 > 0.1 时才更新（Hyperliquid支持1位小数）
+                        # 使用更大的阈值避免频繁微调：
+                        # - 绝对差异 > 1.0 美元（避免噪音）
+                        # - 或相对差异 > 0.5%（对于大价格）
                         needs_update = False
                         update_reason = []
 
+                        # 计算合理的阈值（价格的0.3%，但至少1美元）
+                        current_price = float(asset.current_price) if asset.current_price else 0
+                        min_threshold = max(1.0, current_price * 0.003)
+
                         if signal_sl is not None:
-                            if current_sl is None or abs(signal_sl - current_sl) > 0.05:
+                            if current_sl is None:
+                                # 缺失止损，必须添加
+                                needs_update = True
+                                update_reason.append(f"止损: 未设置 → {signal_sl}")
+                            elif abs(signal_sl - current_sl) > min_threshold:
+                                # 差异显著，需要更新
                                 needs_update = True
                                 update_reason.append(f"止损: {current_sl} → {signal_sl}")
 
                         if signal_tp is not None:
-                            if current_tp is None or abs(signal_tp - current_tp) > 0.05:
+                            if current_tp is None:
+                                # 缺失止盈，必须添加
+                                needs_update = True
+                                update_reason.append(f"止盈: 未设置 → {signal_tp}")
+                            elif abs(signal_tp - current_tp) > min_threshold:
+                                # 差异显著，需要更新
                                 needs_update = True
                                 update_reason.append(f"止盈: {current_tp} → {signal_tp}")
 
