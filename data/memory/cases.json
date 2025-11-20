@@ -1038,5 +1038,3453 @@
     "lessons_learned": [],
     "timestamp": "2025-11-20T17:25:02.970627",
     "case_id": "case_1763630702"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91803.5,
+            "mark": 91803.0,
+            "bid": 91803.0,
+            "ask": 91804.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91731.60106107421,
+            "ema50": 91886.97715911908,
+            "ema200": 95935.25,
+            "rsi14": 51.11157332840737,
+            "macd": {
+              "value": 242.54925546296,
+              "signal": 124.88036202231072,
+              "histogram": 117.66889344064927
+            },
+            "atr14": 790.8915530651295,
+            "obv": -58395.49133,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 70.02197802197803,
+              "d": 76.14652014652015
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:28:33.484976"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3013.35,
+            "mark": 3013.1,
+            "bid": 3012.77,
+            "ask": 3013.4
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3024.4172322454756,
+            "ema50": 3044.8770684702463,
+            "ema200": 3187.259,
+            "rsi14": 47.25814898356185,
+            "macd": {
+              "value": -3.487953631178243,
+              "signal": -8.797038000536052,
+              "histogram": 5.309084369357809
+            },
+            "atr14": 38.02511567447071,
+            "obv": -783314.7373999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 73.60594795539022,
+              "d": 81.18434596749336
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.72114,
+            "stop_loss": 2980.0,
+            "take_profit": 3150.0
+          },
+          "timestamp": "2025-11-20T17:28:34.433011"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 142.115,
+            "mark": 142.13,
+            "bid": 142.11,
+            "ask": 142.12
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.2678646674778,
+            "ema50": 138.9754545544137,
+            "ema200": 142.61225000000002,
+            "rsi14": 58.03282176460438,
+            "macd": {
+              "value": 1.6438652005808763,
+              "signal": 1.0191800561551434,
+              "histogram": 0.6246851444257329
+            },
+            "atr14": 1.9391553619363735,
+            "obv": -925594.3500000022,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 80.31088082901555,
+              "d": 87.51039140210888
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:28:35.432276"
+        }
+      },
+      "account": {
+        "balance": 118.243576,
+        "available": 96.728614,
+        "position_value": 107.576595,
+        "unrealized_pnl": -0.72114
+      },
+      "timestamp": "2025-11-20T17:28:35.432764"
+    },
+    "decision": "### 分析总结\n\n基于当前市场情况分析：\n\n1. **账户状态**：总资产$118.24，持有ETH多头仓位浮亏$-0.72，夏普比率为0.00，表现平平需要谨慎操作。\n\n2. **市场趋势分析**：\n   - BTC：空头排列，EMA20($91731.60) < EMA50($91886.98)，短期偏空\n   - ETH：空头排列，EMA20($3024.42) < EMA50($3044.88)，当前持仓浮亏\n   - SOL：多头排列，EMA20($140.27) > EMA50($138.98)，相对强势\n\n3. **持仓评估**：\n   - ETH多头持仓：入场价$3033.50，当前价$3013.35，浮亏-0.66%\n   - 止损$2980.00设置合理（风险约1.8%）\n   - 止盈$3150.00设置合理（盈亏比约2.5:1）\n\n4. **交易机会评估**：\n   - BTC和ETH均呈空头排列，不适合新开多头\n   - SOL虽多头排列但价格已接近近期高位，追高风险较大\n   - 当前无明显强信号交易机会\n\n5. **风险控制**：夏普比率为0，应保持谨慎，避免过度交易。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:28:35.432809",
+    "case_id": "case_1763630915"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91832.5,
+            "mark": 91833.0,
+            "bid": 91832.0,
+            "ask": 91833.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91734.36296583612,
+            "ema50": 91888.11441402104,
+            "ema200": 95935.395,
+            "rsi14": 51.36106066403847,
+            "macd": {
+              "value": 244.8626457763603,
+              "signal": 125.34304008499078,
+              "histogram": 119.51960569136952
+            },
+            "atr14": 794.1058387794153,
+            "obv": -58424.142499999994,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 70.65934065934066,
+              "d": 76.35897435897435
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:32:00.613604"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3013.95,
+            "mark": 3014.5,
+            "bid": 3013.9,
+            "ask": 3014.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3024.445803674047,
+            "ema50": 3044.8888331761286,
+            "ema200": 3187.2605000000003,
+            "rsi14": 47.30813626085758,
+            "macd": {
+              "value": -3.4640220072469674,
+              "signal": -8.792251675749796,
+              "histogram": 5.3282296685028285
+            },
+            "atr14": 38.132258531613566,
+            "obv": -785583.6434999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 73.76526818905998,
+              "d": 81.23745271204994
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.69615,
+            "stop_loss": 2980.0,
+            "take_profit": 3150.0
+          },
+          "timestamp": "2025-11-20T17:32:01.552983"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 142.345,
+            "mark": 142.35,
+            "bid": 142.34,
+            "ask": 142.35
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.28881704843016,
+            "ema50": 138.98408200539407,
+            "ema200": 142.61335,
+            "rsi14": 58.83231146785448,
+            "macd": {
+              "value": 1.6614150581307285,
+              "signal": 1.0226900276651139,
+              "histogram": 0.6387250304656147
+            },
+            "atr14": 1.9455839333649452,
+            "obv": -931292.7000000022,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 81.93930421909697,
+              "d": 88.05319919880269
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:32:02.510087"
+        }
+      },
+      "account": {
+        "balance": 118.268566,
+        "available": 96.748606,
+        "position_value": 107.598015,
+        "unrealized_pnl": -0.69615
+      },
+      "timestamp": "2025-11-20T17:32:02.510325"
+    },
+    "decision": "### 分析总结\n\n当前市场环境分析：\n\n1. **账户状态**：轻微亏损(-$0.70)，夏普比率0.00，胜率0.0%，显示近期交易效果不佳，需要严格控制风险。\n\n2. **BTC趋势**：空头排列，价格在EMA50下方，整体偏空。EMA20($91734) < EMA50($91888)，当前价$91832在关键均线附近震荡。\n\n3. **ETH持仓**：当前持有多单0.0357 ETH，入场价$3033.50，现价$3013.95，浮亏-$0.70。止损$2980，止盈$3150设置合理，风险回报比约1:3。\n\n4. **SOL机会**：多头排列(EMA20 $140.29 > EMA50 $138.98)，价格$142.34在均线上方，技术面相对较强。\n\n5. **风险评估**：基于夏普比率0.00的反馈，应该采取保守策略，优先管理现有持仓，避免过度交易。\n\n**决策逻辑**：ETH持仓已有合理止损止盈，当前价格接近止损位但未触发，应继续持有观察。SOL虽有技术面支撑，但考虑到整体账户表现和BTC空头趋势，不宜开新仓。最佳策略是耐心持有ETH并等待市场发展。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:32:02.510345",
+    "case_id": "case_1763631122"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91891.5,
+            "mark": 91891.0,
+            "bid": 91889.4,
+            "ask": 91892.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91740.0772515504,
+            "ema50": 91890.46735519751,
+            "ema200": 95935.695,
+            "rsi14": 51.88505280203683,
+            "macd": {
+              "value": 249.64897056267364,
+              "signal": 126.30030504225344,
+              "histogram": 123.3486655204202
+            },
+            "atr14": 794.1058387794153,
+            "obv": -58434.37865,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 71.97802197802197,
+              "d": 76.79853479853479
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:35:27.834059"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3014.45,
+            "mark": 3014.3,
+            "bid": 3014.4,
+            "ask": 3014.5
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3024.493422721666,
+            "ema50": 3044.908441019266,
+            "ema200": 3187.2630000000004,
+            "rsi14": 47.391683800297464,
+            "macd": {
+              "value": -3.4241359673605984,
+              "signal": -8.784274467772523,
+              "histogram": 5.360138500411924
+            },
+            "atr14": 38.132258531613566,
+            "obv": -787307.4994999997,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 74.03080191184279,
+              "d": 81.32596395297755
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.68901,
+            "stop_loss": 2980.0,
+            "take_profit": 3150.0
+          },
+          "timestamp": "2025-11-20T17:35:28.714289"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 142.365,
+            "mark": 142.38,
+            "bid": 142.36,
+            "ask": 142.37
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.29072181033493,
+            "ema50": 138.98486631911956,
+            "ema200": 142.61345,
+            "rsi14": 58.90608603480972,
+            "macd": {
+              "value": 1.663010499726198,
+              "signal": 1.0230091159842079,
+              "histogram": 0.6400013837419902
+            },
+            "atr14": 1.9455839333649452,
+            "obv": -937905.6400000021,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 82.08734270910445,
+              "d": 88.10254536213851
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:35:29.708993"
+        }
+      },
+      "account": {
+        "balance": 118.275706,
+        "available": 96.754318,
+        "position_value": 107.615865,
+        "unrealized_pnl": -0.68901
+      },
+      "timestamp": "2025-11-20T17:35:29.709444"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n- **BTC**：空头排列，价格在EMA20和EMA50下方，短期趋势偏空\n- **ETH**：空头排列，当前持仓LONG处于浮亏状态，但止损设置合理（$2980）\n- **SOL**：多头排列，价格在EMA20和EMA50上方，是当前最强的币种\n\n**账户状态分析**：\n- 夏普比率0.00，交易表现平平，需要谨慎操作\n- 当前持有ETH多头仓位，浮亏$0.69，风险可控\n- 可用资金$96.75，仓位管理空间充足\n\n**风险评估**：\n- BTC和ETH的空头排列表明整体市场情绪偏弱\n- SOL的多头排列是相对强势信号，但需考虑BTC整体趋势影响\n- 当前持仓的止损设置合理，风险回报比约1:3.5，符合稳健原则\n\n基于夏普比率优化原则，当前不宜开新仓，应专注于管理现有持仓。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:35:29.709495",
+    "case_id": "case_1763631329"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91842.5,
+            "mark": 91842.0,
+            "bid": 91842.0,
+            "ask": 91843.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91735.41058488374,
+            "ema50": 91888.54578657006,
+            "ema200": 95935.45,
+            "rsi14": 51.45633211256818,
+            "macd": {
+              "value": 245.7401386538404,
+              "signal": 125.5185386604868,
+              "histogram": 120.2215999933536
+            },
+            "atr14": 794.1058387794153,
+            "obv": -58451.23981,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 70.9010989010989,
+              "d": 76.43956043956044
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:38:55.323386"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3012.65,
+            "mark": 3012.7,
+            "bid": 3012.6,
+            "ask": 3012.7
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3024.3219941502375,
+            "ema50": 3044.837852783972,
+            "ema200": 3187.2540000000004,
+            "rsi14": 47.09228497695269,
+            "macd": {
+              "value": -3.5677257109505263,
+              "signal": -8.812992416490507,
+              "histogram": 5.245266705539981
+            },
+            "atr14": 38.182258531613556,
+            "obv": -788165.9473999997,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 73.07488050982462,
+              "d": 81.00732348563815
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.73899,
+            "stop_loss": 2980.0,
+            "take_profit": 3150.0
+          },
+          "timestamp": "2025-11-20T17:38:56.222722"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 142.245,
+            "mark": 142.26,
+            "bid": 142.24,
+            "ask": 142.2614
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.27929323890635,
+            "ema50": 138.98016043676662,
+            "ema200": 142.61285,
+            "rsi14": 58.46619326344848,
+            "macd": {
+              "value": 1.6534378501535514,
+              "signal": 1.0210945860696785,
+              "histogram": 0.6323432640838729
+            },
+            "atr14": 1.9455839333649452,
+            "obv": -941127.5900000022,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 81.19911176906001,
+              "d": 87.8064683821237
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:38:57.302278"
+        }
+      },
+      "account": {
+        "balance": 118.225726,
+        "available": 96.714334,
+        "position_value": 107.551605,
+        "unrealized_pnl": -0.73899
+      },
+      "timestamp": "2025-11-20T17:38:57.302775"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n- **BTC**：空头排列，价格在EMA20和EMA50下方，短期趋势偏空\n- **ETH**：空头排列，当前持有LONG仓位浮亏$-0.74，持仓成本$3033.50，现价$3012.65\n- **SOL**：多头排列，EMA20>$140.28在EMA50>$138.98之上，技术面相对强势\n\n**风险评估**：\n- 账户夏普比率为0.00，历史表现平平，需要严格控制风险\n- ETH持仓目前浮亏约0.7%，止损设在$2980相对合理，风险可控\n- BTC和ETH均呈空头排列，整体市场情绪偏谨慎\n- SOL虽多头排列但缺乏其他技术指标确认\n\n**决策逻辑**：\n1. ETH持仓：止损设置合理，距离现价约1.1%，风险可控，应继续持有观察\n2. 新开仓机会：BTC和ETH空头排列，但缺乏明确的入场信号和风险回报比\n3. SOL多头排列但需要更多确认信号，当前不宜追高\n4. 基于夏普比率优化原则，应避免低质量交易，耐心等待更好机会\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:38:57.302845",
+    "case_id": "case_1763631537"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91728.5,
+            "mark": 91728.0,
+            "bid": 91727.6,
+            "ask": 91729.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91724.45820393135,
+            "ema50": 91884.0359826485,
+            "ema200": 95934.875,
+            "rsi14": 50.47744788963123,
+            "macd": {
+              "value": 236.5663494800683,
+              "signal": 123.68378082573238,
+              "histogram": 112.88256865433593
+            },
+            "atr14": 796.2486959222724,
+            "obv": -58531.94049,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 68.37362637362638,
+              "d": 75.59706959706959
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:42:27.693444"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3009.85,
+            "mark": 3009.8,
+            "bid": 3009.8,
+            "ask": 3009.9
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3024.0553274835706,
+            "ema50": 3044.728048862403,
+            "ema200": 3187.2400000000007,
+            "rsi14": 46.633999452711095,
+            "macd": {
+              "value": -3.7910875343122825,
+              "signal": -8.857664781162859,
+              "histogram": 5.066577246850576
+            },
+            "atr14": 38.33225853161355,
+            "obv": -789771.5085999997,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 71.58789166224113,
+              "d": 80.51166053644366
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.84609,
+            "stop_loss": 2980.0,
+            "take_profit": 3150.0
+          },
+          "timestamp": "2025-11-20T17:42:28.751297"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.985,
+            "mark": 142.01,
+            "bid": 141.98,
+            "ask": 141.99
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.25357895319206,
+            "ema50": 138.9695722014725,
+            "ema200": 142.6115,
+            "rsi14": 57.500059039289,
+            "macd": {
+              "value": 1.6318993886150963,
+              "signal": 1.0167868937619875,
+              "histogram": 0.6151124948531088
+            },
+            "atr14": 1.9462982190792322,
+            "obv": -944650.0800000022,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 79.20059215396,
+              "d": 87.14029517709037
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:42:29.692478"
+        }
+      },
+      "account": {
+        "balance": 118.118626,
+        "available": 96.628654,
+        "position_value": 107.451645,
+        "unrealized_pnl": -0.84609
+      },
+      "timestamp": "2025-11-20T17:42:29.692932"
+    },
+    "decision": "### 分析总结\n\n基于当前市场情况分析：\n\n1. **账户状态**：轻微亏损(-$0.85)，夏普比率0.00，胜率0.0%，表明近期交易表现不佳，需要严格控制风险。\n\n2. **市场趋势**：\n   - BTC：空头排列，价格在EMA20和EMA50下方，整体偏空\n   - ETH：空头排列，当前持仓LONG处于亏损状态\n   - SOL：多头排列，是当前相对较强的币种\n\n3. **持仓分析**：\n   - ETH多单：入场价$3033.50，当前价$3009.85，亏损约0.8%\n   - 止损$2980设置合理（风险约1.8%），止盈$3150设置合理（盈亏比约3:1）\n   - 持仓符合风险控制要求\n\n4. **交易机会评估**：\n   - BTC和ETH均处于空头趋势，不适合开新仓\n   - SOL虽多头排列，但当前价格已接近EMA20，入场位置不佳\n   - 市场整体缺乏明确的强信号机会\n\n5. **风险控制考量**：\n   - 近期交易表现不佳，应减少交易频率\n   - 现有持仓风险可控，应耐心持有等待趋势发展\n   - 避免在弱势市场中强行开仓\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:42:29.692971",
+    "case_id": "case_1763631749"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91654.5,
+            "mark": 91652.0,
+            "bid": 91654.0,
+            "ask": 91655.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91717.41058488374,
+            "ema50": 91881.13402186419,
+            "ema200": 95934.505,
+            "rsi14": 49.867012459019854,
+            "macd": {
+              "value": 230.66321557691845,
+              "signal": 122.5031540451024,
+              "histogram": 108.16006153181604
+            },
+            "atr14": 802.3915530651295,
+            "obv": -58606.19079,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 66.74725274725274,
+              "d": 75.05494505494505
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:46:00.930304"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3010.05,
+            "mark": 3010.3,
+            "bid": 3010.0,
+            "ask": 3010.1
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3024.083898912142,
+            "ema50": 3044.739813568285,
+            "ema200": 3187.2415,
+            "rsi14": 46.68267438181009,
+            "macd": {
+              "value": -3.767155910381007,
+              "signal": -8.852878456376605,
+              "histogram": 5.085722545995598
+            },
+            "atr14": 38.36797281732783,
+            "obv": -790630.1393999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 71.74721189591067,
+              "d": 80.56476728100017
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.84252,
+            "stop_loss": 2980.0,
+            "take_profit": 3150.0
+          },
+          "timestamp": "2025-11-20T17:46:02.341171"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.885,
+            "mark": 141.89,
+            "bid": 141.8766,
+            "ask": 141.89
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.24405514366828,
+            "ema50": 138.96565063284504,
+            "ema200": 142.611,
+            "rsi14": 57.15028522985053,
+            "macd": {
+              "value": 1.6239221806378907,
+              "signal": 1.0151914521665464,
+              "histogram": 0.6087307284713444
+            },
+            "atr14": 1.954869647650659,
+            "obv": -946222.0200000021,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 78.46039970392303,
+              "d": 86.89356436041137
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:46:03.165002"
+        }
+      },
+      "account": {
+        "balance": 118.122196,
+        "available": 96.63151,
+        "position_value": 107.458785,
+        "unrealized_pnl": -0.84252
+      },
+      "timestamp": "2025-11-20T17:46:03.165470"
+    },
+    "decision": "### 分析总结\n\n基于当前市场情况分析：\n\n1. **整体市场环境**：\n   - BTC和ETH均呈现空头排列，EMA20低于EMA50，显示短期下跌趋势\n   - SOL是唯一呈现多头排列的币种，但需要谨慎对待\n\n2. **账户状态**：\n   - 当前持有ETH多头仓位，浮动亏损$0.84\n   - 夏普比率为0.00，交易表现平平，需要严格控制风险\n   - 可用资金$96.63，仓位管理空间充足\n\n3. **持仓分析**：\n   - ETH多头持仓：入场价$3033.50，当前价$3010.05，亏损约0.77%\n   - 止损设在$2980.00，风险约$1.91，占账户约1.6%\n   - 止盈$3150.00，风险回报比约1:3.8，设置合理\n\n4. **交易机会评估**：\n   - BTC和ETH空头排列，不适合开新多头\n   - SOL多头排列但价格已接近EMA20，入场时机不佳\n   - 当前持仓的止损止盈设置合理，无需调整\n\n5. **风险控制考虑**：\n   - 夏普比率为0，应保持谨慎，避免过度交易\n   - 现有持仓风险可控，让市场自然发展\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:46:03.165514",
+    "case_id": "case_1763631963"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91466.0,
+            "mark": 91474.0,
+            "bid": 91459.9,
+            "ask": 91472.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91699.02963250279,
+            "ema50": 91873.56539441319,
+            "ema200": 95933.54,
+            "rsi14": 48.34227517849524,
+            "macd": {
+              "value": 215.2672041809128,
+              "signal": 119.42395176590128,
+              "histogram": 95.84325241501153
+            },
+            "atr14": 815.320124493701,
+            "obv": -58691.458889999994,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 62.50549450549451,
+              "d": 73.64102564102564
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:49:29.392688"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3000.35,
+            "mark": 2999.8,
+            "bid": 3000.3,
+            "ask": 3000.58
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3023.0743751026184,
+            "ema50": 3044.3241272937757,
+            "ema200": 3187.1885,
+            "rsi14": 45.02226707906262,
+            "macd": {
+              "value": -4.612739955965026,
+              "signal": -9.021995265493407,
+              "histogram": 4.4092553095283815
+            },
+            "atr14": 39.11797281732783,
+            "obv": -793449.7292999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 66.1178969729155,
+              "d": 78.68832897333512
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -1.21023,
+            "stop_loss": 2980.0,
+            "take_profit": 3150.0
+          },
+          "timestamp": "2025-11-20T17:49:30.589065"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.375,
+            "mark": 141.4,
+            "bid": 141.37,
+            "ask": 141.38
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.19453133414447,
+            "ema50": 138.9452584759823,
+            "ema200": 142.6084,
+            "rsi14": 55.39795453040906,
+            "macd": {
+              "value": 1.5824406991563933,
+              "signal": 1.0068951558702468,
+              "histogram": 0.5755455432861465
+            },
+            "atr14": 1.9912982190792319,
+            "obv": -955248.0200000021,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 74.61139896373071,
+              "d": 85.6105641136806
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:49:31.149423"
+        }
+      },
+      "account": {
+        "balance": 117.754486,
+        "available": 96.337342,
+        "position_value": 107.112495,
+        "unrealized_pnl": -1.21023
+      },
+      "timestamp": "2025-11-20T17:49:31.149864"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n- **BTC/USDC**：空头排列明显，价格$91466低于EMA20($91699)和EMA50($91873)，短期趋势偏空\n- **ETH/USDC**：同样空头排列，当前持仓LONG处于浮亏状态($-1.21)，但止损$2980设置合理，距离当前价$3000.35有足够缓冲空间\n- **SOL/USDC**：唯一多头排列品种，价格$141.38高于EMA20($140.19)和EMA50($138.95)，显示相对强势\n\n**风险状况评估**：\n- 当前持仓ETH浮亏$1.21，但止损设置合理，风险可控\n- 总仓位$107.11，占用资金合理，仍有$96.34可用资金\n- 历史表现显示夏普比率0.00，需要谨慎操作\n\n**机会分析**：\n- SOL呈现技术面强势，但需要更多确认信号\n- BTC和ETH整体偏空，不适合逆势开多\n- 当前没有明确的强信号开仓机会\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:49:31.149907",
+    "case_id": "case_1763632171"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91583.5,
+            "mark": 91587.0,
+            "bid": 91583.0,
+            "ask": 91584.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91710.74391821706,
+            "ema50": 91878.38892382497,
+            "ema200": 95934.155,
+            "rsi14": 49.30300858673296,
+            "macd": {
+              "value": 225.07916999288136,
+              "signal": 121.38634492829499,
+              "histogram": 103.69282506458637
+            },
+            "atr14": 816.1058387794153,
+            "obv": -58739.439979999996,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 65.20879120879121,
+              "d": 74.54212454212454
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:53:00.358266"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3005.75,
+            "mark": 3005.8,
+            "bid": 3005.7,
+            "ask": 3005.8
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3023.6553274835705,
+            "ema50": 3044.56334298005,
+            "ema200": 3187.219,
+            "rsi14": 45.96305506773045,
+            "macd": {
+              "value": -4.126130269355144,
+              "signal": -8.924673328171432,
+              "histogram": 4.798543058816287
+            },
+            "atr14": 39.11797281732783,
+            "obv": -794791.6970999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 69.35740839086553,
+              "d": 79.76816611265178
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.99603,
+            "stop_loss": 2980.0,
+            "take_profit": 3150.0
+          },
+          "timestamp": "2025-11-20T17:53:01.605874"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.665,
+            "mark": 141.67,
+            "bid": 141.66,
+            "ask": 141.67
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.22024561985873,
+            "ema50": 138.95584671127642,
+            "ema200": 142.60975,
+            "rsi14": 56.29418902433029,
+            "macd": {
+              "value": 1.6039791606948484,
+              "signal": 1.0112028481779378,
+              "histogram": 0.5927763125169105
+            },
+            "atr14": 1.9912982190792319,
+            "obv": -958286.4500000022,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 76.6099185788305,
+              "d": 86.27673731871387
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:53:02.682576"
+        }
+      },
+      "account": {
+        "balance": 117.972256,
+        "available": 96.511558,
+        "position_value": 107.305275,
+        "unrealized_pnl": -0.99603
+      },
+      "timestamp": "2025-11-20T17:53:02.683078"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n\n**BTC/USDC**：空头排列明显，价格低于EMA20和EMA50，短期趋势偏空。当前价$91583.50在关键支撑区域，需要观察是否能守住$91000水平。\n\n**ETH/USDC**：同样空头排列，当前持仓LONG 0.0357，入场价$3033.50，浮动亏损$-1.00。止损$2980相对合理，距离当前价约0.85%，风险可控。止盈$3150提供约3.8%的潜在回报，风险回报比约1:4.5，符合优质交易标准。\n\n**SOL/USDC**：唯一多头排列的资产，EMA20>$140.22，EMA50>$138.96，价格$141.66在均线之上，显示相对强势。\n\n**账户状态**：夏普比率0.00，胜率0.0%，显示近期交易效果不佳。当前仅持有ETH多头仓位，占用资金合理，可用资金$96.51充足。\n\n**风险评估**：BTC和ETH的空头排列需要谨慎，但ETH持仓的风险回报比良好，SOL的多头排列提供潜在机会但需要确认突破。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:53:02.683123",
+    "case_id": "case_1763632382"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91899.5,
+            "mark": 91887.0,
+            "bid": 91892.9,
+            "ask": 91900.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91740.74391821706,
+            "ema50": 91890.74186500143,
+            "ema200": 95935.73,
+            "rsi14": 51.94688249158191,
+            "macd": {
+              "value": 250.20737512108462,
+              "signal": 126.41198595393564,
+              "histogram": 123.79538916714898
+            },
+            "atr14": 816.1058387794153,
+            "obv": -58877.79735,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 72.13186813186813,
+              "d": 76.84981684981685
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:56:31.025617"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3010.75,
+            "mark": 3010.8,
+            "bid": 3010.7,
+            "ask": 3010.8
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3024.141041769285,
+            "ema50": 3044.7633429800503,
+            "ema200": 3187.2445000000007,
+            "rsi14": 46.780329708761556,
+            "macd": {
+              "value": -3.7192926625180007,
+              "signal": -8.843305806804002,
+              "histogram": 5.1240131442860015
+            },
+            "atr14": 39.11797281732783,
+            "obv": -796296.5458999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 72.0658523632502,
+              "d": 80.67098077011335
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.80682,
+            "stop_loss": 2970.0,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:56:32.045658"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.885,
+            "mark": 141.88,
+            "bid": 141.88,
+            "ask": 141.89
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.24405514366828,
+            "ema50": 138.96565063284504,
+            "ema200": 142.611,
+            "rsi14": 57.15028522985053,
+            "macd": {
+              "value": 1.6239221806378907,
+              "signal": 1.0151914521665464,
+              "histogram": 0.6087307284713444
+            },
+            "atr14": 1.9912982190792319,
+            "obv": -962195.3900000021,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 78.46039970392303,
+              "d": 86.89356436041137
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T17:56:33.030376"
+        }
+      },
+      "account": {
+        "balance": 118.157896,
+        "available": 96.66007,
+        "position_value": 107.483775,
+        "unrealized_pnl": -0.80682
+      },
+      "timestamp": "2025-11-20T17:56:33.030861"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局，需要谨慎评估：\n\n**BTC/USDC**: \n- 价格$91,899.50，处于EMA20($91,740.74)和EMA50($91,890.74)之间\n- 空头排列但价格接近均线，方向不明确\n- 缺乏明确的突破信号，建议观望\n\n**ETH/USDC**:\n- 当前持仓LONG 0.0357，入场价$3,033.50，当前价$3,010.75，浮亏$-0.81\n- 空头排列明显，EMA20($3,024.14) < EMA50($3,044.76)\n- 价格低于两条EMA，趋势偏空\n- 现有止损$2,970.00设置合理，但需要检查是否需要优化\n\n**SOL/USDC**:\n- 多头排列，EMA20($140.24) > EMA50($138.97)\n- 价格$141.88高于两条EMA，技术面相对最强\n- 但考虑到整体市场环境偏弱，SOL单独走强持续性存疑\n\n**风险考量**:\n- 夏普比率0.00，历史表现平平，需要严格控制风险\n- BTC和ETH均呈空头排列，整体市场情绪偏谨慎\n- 现有ETH持仓处于浮亏状态，需要严格管理\n\n**决策逻辑**:\n1. ETH持仓需要优化止损设置，保护资金安全\n2. 当前无高质量开仓机会，市场方向不明\n3. 优先管理现有持仓风险，避免新增仓位\n\n### 决策",
+    "execution_result": [
+      {
+        "signal": {
+          "action": "set_stop_loss",
+          "symbol": "ETH/USDC:USDC",
+          "amount": 0.0357,
+          "leverage": 3,
+          "stop_loss": 2985.0,
+          "take_profit": 3080.0,
+          "confidence": 75,
+          "reason": "优化ETH持仓止损至$2985，提高保护位；设置止盈$3080，风险回报比约1:2.5；当前空头排列下严格控制风险"
+        },
+        "result": {
+          "success": true,
+          "result": {
+            "status": "success",
+            "action": "modify_sl_tp",
+            "order_id": null,
+            "symbol": "ETH/USDC:USDC",
+            "executed_amount": null,
+            "executed_price": null,
+            "fee": null,
+            "message": "成功设置止盈止损（已取消 1 个旧订单）",
+            "error": null,
+            "position": null,
+            "timestamp": "2025-11-20T17:57:00.859377",
+            "raw_response": {
+              "cancelled_orders": [
+                "242206267158"
+              ],
+              "new_orders": [
+                {
+                  "type": "stop_loss",
+                  "order_id": "242206966961",
+                  "price": 2985.0
+                }
+              ]
+            }
+          }
+        },
+        "timestamp": "2025-11-20T17:57:00.859538"
+      }
+    ],
+    "realized_pnl": null,
+    "reflection": "## 决策分析\n\n**1. 这次决策合理吗？**\n基本合理。决策体现了良好的风险管理意识：\n- 正确识别了市场分化格局和整体偏空的环境\n- 对现有浮亏持仓设置了止损保护\n- 避免了在方向不明时开新仓的冲动\n- 止损设置考虑了技术面支撑位\n\n**2. 如果重来，会怎么做？**\n- 更早调整止损：在EMA明确转为空头排列时就应上移止损至入场价附近\n- 考虑部分减仓：在整体市场偏空且持仓品种技术面转弱时，可先减仓50%降低风险\n- 增加SOL的观察：虽然市场整体偏弱，但SOL的多头排列值得更密切跟踪，等待回调买入机会\n\n**3. 经验总结**\n\n技术面与持仓方向冲突时应立即调整风险管理\n浮亏持仓需要更主动的止损优化而非被动等待\n市场分化时要聚焦最强/最弱品种的机会\n空头排列中的反弹是减仓而非加仓机会\n止损设置要结合技术指标而非固定百分比",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T17:56:33.030905",
+    "case_id": "case_1763632593"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91941.5,
+            "mark": 91942.0,
+            "bid": 91941.0,
+            "ask": 91942.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91758.79098353561,
+            "ema50": 91892.40795218498,
+            "ema200": 95879.75,
+            "rsi14": 52.32059745025303,
+            "macd": {
+              "value": 231.07367023598636,
+              "signal": 147.17835982961455,
+              "histogram": 83.8953104063718
+            },
+            "atr14": 761.8840251647247,
+            "obv": -59614.299100000004,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 66.95441057458862,
+              "d": 71.9152064552658
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:00:19.522214"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3010.95,
+            "mark": 3011.3,
+            "bid": 3010.9,
+            "ask": 3011.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3022.8895140333616,
+            "ema50": 3043.4498518420505,
+            "ema200": 3185.1719999999996,
+            "rsi14": 46.820261715688126,
+            "macd": {
+              "value": -4.448992626459585,
+              "signal": -7.9644430210666926,
+              "histogram": 3.5154503946071074
+            },
+            "atr14": 36.388119247895276,
+            "obv": -811820.5956999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 57.432981316003136,
+              "d": 70.75005214352538
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.81753,
+            "stop_loss": 2985.0,
+            "take_profit": 3080.0
+          },
+          "timestamp": "2025-11-20T18:00:20.501012"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.945,
+            "mark": 141.95,
+            "bid": 141.94,
+            "ask": 141.95
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.4097913912745,
+            "ema50": 139.0846100293846,
+            "ema200": 142.5499,
+            "rsi14": 57.3219462732411,
+            "macd": {
+              "value": 1.5509202548643657,
+              "signal": 1.1231028629133415,
+              "histogram": 0.4278173919510242
+            },
+            "atr14": 1.8533484350222231,
+            "obv": -1070243.050000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 76.48026315789485,
+              "d": 81.64071495996093
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:00:21.510642"
+        }
+      },
+      "account": {
+        "balance": 118.145843,
+        "available": 96.650159,
+        "position_value": 107.490915,
+        "unrealized_pnl": -0.81753
+      },
+      "timestamp": "2025-11-20T18:00:21.511118"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n- **BTC**：空头排列，价格在EMA20和EMA50下方，短期趋势偏空\n- **ETH**：空头排列，当前持仓LONG处于浮亏状态，但止损设置合理（$2985）\n- **SOL**：多头排列，价格在EMA20和EMA50上方，是当前最强势的币种\n\n**账户状态分析**：\n- 夏普比率0.00，胜率0.0%，表明近期交易质量不佳\n- 当前持仓ETH浮亏$0.82，但止损设置合理，风险可控\n- 可用资金$96.65，仓位管理相对保守\n\n**交易机会评估**：\n- SOL多头排列提供做多机会，但需要确认入场时机\n- BTC和ETH空头排列，但当前价格接近EMA均线，缺乏明确突破信号\n- 考虑到夏普比率为0，应保持谨慎，避免过度交易\n\n**风险控制重点**：\n- 现有ETH持仓止损设置合理，应继续持有观察\n- 新开仓需要强信号支持，当前市场信号不够明确\n- 优先管理现有持仓，等待更好机会\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:00:21.511163",
+    "case_id": "case_1763632821"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91836.5,
+            "mark": 91826.0,
+            "bid": 91821.8,
+            "ask": 91837.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91748.69574544037,
+            "ema50": 91888.25108943989,
+            "ema200": 95879.22,
+            "rsi14": 51.36238766927859,
+            "macd": {
+              "value": 222.61782978013798,
+              "signal": 145.4871917384449,
+              "histogram": 77.13063804169309
+            },
+            "atr14": 772.4554537361533,
+            "obv": -59755.68424,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 64.09495548961425,
+              "d": 70.96205476027434
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:03:48.122542"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3005.35,
+            "mark": 3005.2,
+            "bid": 3005.3,
+            "ask": 3005.4
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3022.3561807000283,
+            "ema50": 3043.230243998913,
+            "ema200": 3185.1440000000002,
+            "rsi14": 45.850690383225505,
+            "macd": {
+              "value": -4.895716273183552,
+              "signal": -8.053787750411486,
+              "histogram": 3.1580714772279332
+            },
+            "atr14": 36.99526210503814,
+            "obv": -813245.3710999999,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 52.88383428107226,
+              "d": 69.23366979854842
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -1.00317,
+            "stop_loss": 2985.0,
+            "take_profit": 3080.0
+          },
+          "timestamp": "2025-11-20T18:03:49.034820"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.855,
+            "mark": 141.84,
+            "bid": 141.8203,
+            "ask": 141.86
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.4040771055602,
+            "ema50": 139.08225708820814,
+            "ema200": 142.5496,
+            "rsi14": 57.09684933620212,
+            "macd": {
+              "value": 1.5461339300780423,
+              "signal": 1.1221455979560768,
+              "histogram": 0.4239883321219655
+            },
+            "atr14": 1.8754912921650804,
+            "obv": -1073111.380000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 75.98684210526325,
+              "d": 81.4762412757504
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:03:50.078513"
+        }
+      },
+      "account": {
+        "balance": 117.960203,
+        "available": 96.501647,
+        "position_value": 107.290995,
+        "unrealized_pnl": -1.00317
+      },
+      "timestamp": "2025-11-20T18:03:50.078907"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n\n**BTC/USDC**：空头排列，价格在EMA20和EMA50下方，短期趋势偏空\n**ETH/USDC**：空头排列，当前持有LONG仓位，浮动亏损$1.00，止损$2985.00设置合理\n**SOL/USDC**：多头排列，价格在EMA20和EMA50上方，是当前最强的币种\n\n**账户状态分析**：\n- 夏普比率0.00，胜率0.0%，表明近期交易质量不高\n- 持仓占用资金$107.29，可用资金$96.50，仓位适中\n- ETH持仓目前小幅亏损，但止损设置合理\n\n**交易机会评估**：\n- SOL呈现明确多头趋势，但需要等待更好的入场时机\n- BTC和ETH空头排列，不适合做多\n- 当前没有明确的突破或回踩确认信号\n- 市场整体缺乏强劲的催化剂\n\n基于稳健交易原则，当前应该保持耐心，等待更高质量的交易机会。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:03:50.078946",
+    "case_id": "case_1763633030"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91724.5,
+            "mark": 91703.0,
+            "bid": 91710.7,
+            "ask": 91725.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91738.0290787737,
+            "ema50": 91883.85893257715,
+            "ema200": 95878.66,
+            "rsi14": 50.3403626553625,
+            "macd": {
+              "value": 213.6833568456641,
+              "signal": 143.7002971515501,
+              "histogram": 69.98305969411399
+            },
+            "atr14": 779.669739450439,
+            "obv": -59831.72862,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 61.073644456433776,
+              "d": 69.95495108254752
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:07:19.424842"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 2999.35,
+            "mark": 2999.1,
+            "bid": 2998.75,
+            "ask": 2999.4
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3021.8990378428857,
+            "ema50": 3043.0420087047955,
+            "ema200": 3185.12,
+            "rsi14": 45.054826492741114,
+            "macd": {
+              "value": -5.278622256089875,
+              "signal": -8.13036894699275,
+              "histogram": 2.851746690902875
+            },
+            "atr14": 37.26669067646669,
+            "obv": -813761.2024999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 48.98456539398845,
+              "d": 67.93391350285381
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -1.17453,
+            "stop_loss": 2985.0,
+            "take_profit": 3080.0
+          },
+          "timestamp": "2025-11-20T18:07:20.440650"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.435,
+            "mark": 141.48,
+            "bid": 141.43,
+            "ask": 141.44
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.37645805794116,
+            "ema50": 139.07088453918854,
+            "ema200": 142.54815,
+            "rsi14": 56.03333853680486,
+            "macd": {
+              "value": 1.5230000269441177,
+              "signal": 1.1175188173292918,
+              "histogram": 0.4054812096148259
+            },
+            "atr14": 1.890491292165079,
+            "obv": -1073645.650000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 73.60197368421069,
+              "d": 80.68128513539955
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:07:21.475056"
+        }
+      },
+      "account": {
+        "balance": 117.788843,
+        "available": 96.364559,
+        "position_value": 107.076795,
+        "unrealized_pnl": -1.17453
+      },
+      "timestamp": "2025-11-20T18:07:21.475458"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局，需要谨慎应对：\n\n**整体趋势分析**：\n- BTC和ETH均处于空头排列，EMA20低于EMA50，短期趋势偏弱\n- SOL是唯一多头排列的币种，EMA20 > EMA50，显示相对强势\n- 市场整体情绪偏谨慎，BTC作为风向标的下行压力可能传导至其他币种\n\n**持仓状况评估**：\n- 当前持有ETH多头仓位，浮亏$1.17，入场价$3033.50\n- 止损设在$2985.00，距离当前价约0.5%，风险可控\n- 止盈$3080.00，风险回报比约1:2.7，符合稳健标准\n- 持仓逻辑：在EMA空头排列中做多属于逆势操作，需要密切关注\n\n**机会识别**：\n- SOL多头排列提供相对较好的技术面支撑\n- 但BTC和ETH的弱势可能拖累SOL表现\n- 当前没有明确的强信号开仓机会，市场需要更多确认\n\n**风险考量**：\n- 历史表现显示交易频率可能偏高（7天18次交易）\n- 夏普比率为0，说明交易质量需要提升\n- 在弱势市场中，保护资本比追求收益更重要\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:07:21.475499",
+    "case_id": "case_1763633241"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91638.5,
+            "mark": 91632.0,
+            "bid": 91638.0,
+            "ask": 91641.6
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91729.93384067847,
+            "ema50": 91880.5255992438,
+            "ema200": 95878.235,
+            "rsi14": 49.591462127345984,
+            "macd": {
+              "value": 206.90273006503412,
+              "signal": 142.3441717954241,
+              "histogram": 64.55855826961002
+            },
+            "atr14": 785.8125965932961,
+            "obv": -59862.91956,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 58.78068519018073,
+              "d": 69.19063132712984
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:10:51.865500"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 2996.45,
+            "mark": 2996.1,
+            "bid": 2996.4,
+            "ask": 2996.5
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3021.527609271457,
+            "ema50": 3042.889067528325,
+            "ema200": 3185.1005000000005,
+            "rsi14": 44.42824800757365,
+            "macd": {
+              "value": -5.589733367200552,
+              "signal": -8.192591169214886,
+              "histogram": 2.6028578020143343
+            },
+            "atr14": 37.666690676466715,
+            "obv": -814638.6678999999,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 45.816409423232884,
+              "d": 66.87786151260195
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -1.32447,
+            "stop_loss": 2985.0,
+            "take_profit": 3080.0
+          },
+          "timestamp": "2025-11-20T18:10:52.639061"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.225,
+            "mark": 141.25,
+            "bid": 141.22,
+            "ask": 141.23
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.34121996270306,
+            "ema50": 139.05637473526696,
+            "ema200": 142.5463,
+            "rsi14": 54.73263054697428,
+            "macd": {
+              "value": 1.493484357428457,
+              "signal": 1.1116156834261597,
+              "histogram": 0.3818686740022974
+            },
+            "atr14": 1.9240627207365075,
+            "obv": -1090031.300000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 70.55921052631591,
+              "d": 79.66703074943462
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:10:53.770113"
+        }
+      },
+      "account": {
+        "balance": 117.638903,
+        "available": 96.244607,
+        "position_value": 106.973265,
+        "unrealized_pnl": -1.32447
+      },
+      "timestamp": "2025-11-20T18:10:53.770645"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n\n**BTC/USDC**：空头排列明显，价格$91638.50低于EMA20($91729.93)和EMA50($91880.53)，短期趋势偏空。\n\n**ETH/USDC**：同样空头排列，当前持仓LONG 0.0357 ETH处于浮亏状态(-$1.32)。价格$2996.45低于EMA20($3021.53)和EMA50($3042.89)，趋势不利。当前止损$2985.00设置合理，距离现价约0.38%，风险可控。\n\n**SOL/USDC**：唯一多头排列品种，价格$141.22高于EMA20($140.34)和EMA50($139.06)，显示相对强势。\n\n**账户状态**：总资产$117.64，持仓$106.97，仓位较重(约91%)。历史表现显示交易频率可能过高(7天19次)，夏普比率0.00，需要严格控制交易频率。\n\n**风险评估**：ETH持仓面临逆势风险，但止损设置合理。当前不宜开新仓，应专注于管理现有持仓。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:10:53.770701",
+    "case_id": "case_1763633453"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91636.5,
+            "mark": 91636.0,
+            "bid": 91636.0,
+            "ask": 91637.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91729.83860258323,
+            "ema50": 91880.48638355754,
+            "ema200": 95878.23,
+            "rsi14": 49.582784124656996,
+            "macd": {
+              "value": 206.8229579852632,
+              "signal": 142.32821737946992,
+              "histogram": 64.49474060579328
+            },
+            "atr14": 788.2411680218676,
+            "obv": -59889.04531,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 58.753709198813056,
+              "d": 69.18163933000729
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:14:23.809130"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 2998.15,
+            "mark": 2998.0,
+            "bid": 2998.1,
+            "ask": 2998.2
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3021.689514033362,
+            "ema50": 3042.9557341949917,
+            "ema200": 3185.1090000000004,
+            "rsi14": 44.69921624069492,
+            "macd": {
+              "value": -5.45412083158817,
+              "signal": -8.16546866209241,
+              "histogram": 2.7113478305042396
+            },
+            "atr14": 37.716690676466705,
+            "obv": -816253.7323999999,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 47.19740048740857,
+              "d": 67.33819186732718
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -1.26735,
+            "stop_loss": 2985.0,
+            "take_profit": 3080.0
+          },
+          "timestamp": "2025-11-20T18:14:24.857695"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.315,
+            "mark": 141.31,
+            "bid": 141.31,
+            "ask": 141.32
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.35169615317926,
+            "ema50": 139.06068846075715,
+            "ema200": 142.54685,
+            "rsi14": 55.11297591542669,
+            "macd": {
+              "value": 1.5022592862033832,
+              "signal": 1.113370669181145,
+              "histogram": 0.3888886170222383
+            },
+            "atr14": 1.9240627207365075,
+            "obv": -1097113.620000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 71.46381578947368,
+              "d": 79.96856583715388
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:14:25.946487"
+        }
+      },
+      "account": {
+        "balance": 117.696023,
+        "available": 96.290303,
+        "position_value": 107.033955,
+        "unrealized_pnl": -1.26735
+      },
+      "timestamp": "2025-11-20T18:14:25.946803"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局，需要谨慎应对：\n\n**BTC/USDC**：空头排列明显，价格$91636.50低于EMA20($91729.84)和EMA50($91880.49)，短期趋势偏空。但价格接近均线，突破可能带来方向性变化。\n\n**ETH/USDC**：当前持有0.0357多头仓位，浮动亏损$-1.27。价格$2998.15低于EMA20($3021.69)和EMA50($3042.96)，空头排列对多头持仓不利。现有止损$2985.00和止盈$3080.00设置合理，风险回报比约1:2.5。\n\n**SOL/USDC**：唯一多头排列品种，EMA20($140.35) > EMA50($139.06)，价格$141.31在均线之上，技术面相对健康。\n\n**风险考量**：\n- 夏普比率0.00显示近期交易质量不佳\n- ETH持仓已处于亏损状态，需严格止损纪律\n- BTC和ETH的空头排列暗示整体市场偏弱\n- 当前仅持有1个币种，仓位风险可控\n\n**决策逻辑**：鉴于ETH持仓已设置合理止损止盈，且SOL虽有多头信号但整体市场环境偏弱，建议保持现有持仓观望，不新增仓位。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:14:25.946835",
+    "case_id": "case_1763633665"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91677.5,
+            "mark": 91688.0,
+            "bid": 91677.0,
+            "ask": 91690.5
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91733.55288829752,
+            "ema50": 91882.01579532224,
+            "ema200": 95878.425,
+            "rsi14": 49.923492203407086,
+            "macd": {
+              "value": 209.9340690963727,
+              "signal": 142.9504396016918,
+              "histogram": 66.98362949468088
+            },
+            "atr14": 788.2411680218676,
+            "obv": -59904.428570000004,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 59.805772862152686,
+              "d": 69.53232721778716
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:17:57.739421"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3000.65,
+            "mark": 3000.7,
+            "bid": 3000.6,
+            "ask": 3000.7
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3021.8990378428857,
+            "ema50": 3043.0420087047955,
+            "ema200": 3185.12,
+            "rsi14": 45.054826492741114,
+            "macd": {
+              "value": -5.278622256089875,
+              "signal": -8.13036894699275,
+              "histogram": 2.851746690902875
+            },
+            "atr14": 37.716690676466705,
+            "obv": -817812.6022999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 48.98456539398845,
+              "d": 67.93391350285381
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -1.17096,
+            "stop_loss": 2985.0,
+            "take_profit": 3060.0
+          },
+          "timestamp": "2025-11-20T18:17:58.643205"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.205,
+            "mark": 141.2,
+            "bid": 141.2,
+            "ask": 141.21
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.34121996270306,
+            "ema50": 139.05637473526696,
+            "ema200": 142.5463,
+            "rsi14": 54.73263054697428,
+            "macd": {
+              "value": 1.493484357428457,
+              "signal": 1.1116156834261597,
+              "histogram": 0.3818686740022974
+            },
+            "atr14": 1.9240627207365075,
+            "obv": -1105295.160000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 70.55921052631591,
+              "d": 79.66703074943462
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:17:59.785259"
+        }
+      },
+      "account": {
+        "balance": 117.792413,
+        "available": 96.367415,
+        "position_value": 107.123205,
+        "unrealized_pnl": -1.17096
+      },
+      "timestamp": "2025-11-20T18:17:59.785710"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n- **BTC**：空头排列，价格$91677.50低于EMA20($91733.55)和EMA50($91882.02)，短期趋势偏空\n- **ETH**：空头排列且当前持仓浮亏$-1.17，入场价$3033.50高于当前价$3000.65，但止损$2985.00设置合理，距离当前价约0.5%空间\n- **SOL**：多头排列，价格$141.21高于EMA20($140.34)和EMA50($139.06)，是当前相对强势的币种\n\n**风险评估**：\n- 账户总风险可控，ETH持仓止损设置合理\n- 历史表现显示交易频率可能偏高（7天21次），夏普比率为0，需要更谨慎\n- BTC和ETH整体趋势偏空，SOL相对强势但需观察持续性\n\n**决策逻辑**：\n1. ETH持仓虽有浮亏，但止损设置合理，趋势尚未完全破坏，应继续持有观察\n2. 当前无明确高质量开仓信号，BTC和SOL均未达到强信号标准\n3. 市场整体偏震荡，应保持观望，等待更明确方向\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:17:59.785756",
+    "case_id": "case_1763633879"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91816.5,
+            "mark": 91822.0,
+            "bid": 91816.0,
+            "ask": 91818.2
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91746.69574544037,
+            "ema50": 91887.42756002813,
+            "ema200": 95879.115,
+            "rsi14": 51.16760891674009,
+            "macd": {
+              "value": 220.94261610491958,
+              "signal": 145.1521490034012,
+              "histogram": 75.79046710151837
+            },
+            "atr14": 788.2411680218676,
+            "obv": -59930.33448,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 63.5284596708929,
+              "d": 70.77322282070057
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:21:29.620482"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3006.75,
+            "mark": 3006.3,
+            "bid": 3006.7,
+            "ask": 3006.8
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3022.4609426047905,
+            "ema50": 3043.273381253815,
+            "ema200": 3185.1494999999995,
+            "rsi14": 46.03705198403154,
+            "macd": {
+              "value": -4.807966985434632,
+              "signal": -8.036237892861703,
+              "histogram": 3.2282709074270706
+            },
+            "atr14": 37.716690676466705,
+            "obv": -820672.6512999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 53.777416734362205,
+              "d": 69.53153061631173
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.97818,
+            "stop_loss": 2985.0,
+            "take_profit": 3060.0
+          },
+          "timestamp": "2025-11-20T18:21:30.547733"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.655,
+            "mark": 141.65,
+            "bid": 141.65,
+            "ask": 141.66
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.38312472460782,
+            "ema50": 139.07362963722775,
+            "ema200": 142.5485,
+            "rsi14": 56.286404249635034,
+            "macd": {
+              "value": 1.5285840725281616,
+              "signal": 1.1186356264461006,
+              "histogram": 0.40994844608206105
+            },
+            "atr14": 1.9240627207365075,
+            "obv": -1106706.530000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 74.17763157894748,
+              "d": 80.87317110031181
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:21:31.682703"
+        }
+      },
+      "account": {
+        "balance": 117.985193,
+        "available": 96.521639,
+        "position_value": 107.340975,
+        "unrealized_pnl": -0.97818
+      },
+      "timestamp": "2025-11-20T18:21:31.683158"
+    },
+    "decision": "### 分析总结\n\n基于当前市场情况分析：\n\n**账户状态**：\n- 总资产$117.99，仅持有ETH多单，浮动亏损$-0.98\n- 夏普比率0.00，胜率0.0%，显示近期交易表现不佳\n- 交易频率较高（7天22次），可能存在过度交易问题\n\n**市场环境**：\n- BTC：空头排列，价格在EMA20和EMA50之间震荡，无明显方向\n- ETH：空头排列，当前持仓处于亏损状态，但止损设置合理\n- SOL：多头排列，是当前唯一显示明确多头趋势的币种\n\n**持仓分析**：\n- ETH多单入场价$3033.50，当前价$3006.75，亏损约0.9%\n- 止损$2985.00（风险1.6%），止盈$3060.00（潜在收益0.9%）\n- 风险回报比约1:0.56，不理想但止损设置合理\n\n**交易机会评估**：\n- BTC和ETH均处于空头排列，不宜开新多单\n- SOL虽多头排列，但考虑到当前夏普比率为0，应保持谨慎\n- 最佳策略：管理现有持仓，等待更明确信号\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:21:31.683201",
+    "case_id": "case_1763634091"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91793.5,
+            "mark": 91794.0,
+            "bid": 91793.0,
+            "ask": 91794.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91744.60050734514,
+            "ema50": 91886.56481493008,
+            "ema200": 95879.005,
+            "rsi14": 50.96513320914661,
+            "macd": {
+              "value": 219.1876303499448,
+              "signal": 144.80115185240624,
+              "histogram": 74.38647849753858
+            },
+            "atr14": 788.2411680218676,
+            "obv": -59992.22771,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 62.93498786080388,
+              "d": 70.57539888400423
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:25:02.261394"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3003.85,
+            "mark": 3003.8,
+            "bid": 3003.8,
+            "ask": 3003.9
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3022.2133235571714,
+            "ema50": 3043.1714204695013,
+            "ema200": 3185.1365,
+            "rsi14": 45.598979136598466,
+            "macd": {
+              "value": -5.01537439284175,
+              "signal": -8.077719374343125,
+              "histogram": 3.0623449815013757
+            },
+            "atr14": 37.716690676466705,
+            "obv": -821314.6960999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 51.665312753858615,
+              "d": 68.82749595614386
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -1.05672,
+            "stop_loss": 2985.0,
+            "take_profit": 3060.0
+          },
+          "timestamp": "2025-11-20T18:25:03.192988"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.705,
+            "mark": 141.72,
+            "bid": 141.7,
+            "ask": 141.71
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.38788662936972,
+            "ema50": 139.07559042154148,
+            "ema200": 142.54875,
+            "rsi14": 56.46856951013299,
+            "macd": {
+              "value": 1.5325726765167644,
+              "signal": 1.1194333472438212,
+              "histogram": 0.4131393292729433
+            },
+            "atr14": 1.9240627207365075,
+            "obv": -1113254.620000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 74.58881578947366,
+              "d": 81.01023250382053
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:25:04.131305"
+        }
+      },
+      "account": {
+        "balance": 117.906653,
+        "available": 96.458807,
+        "position_value": 107.237445,
+        "unrealized_pnl": -1.05672
+      },
+      "timestamp": "2025-11-20T18:25:04.131766"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n\n**BTC/USDC**: 空头排列，EMA20 < EMA50，价格在均线下方，短期趋势偏空\n**ETH/USDC**: 空头排列，当前持有LONG仓位，浮动亏损-1.06美元，止损2985，止盈3060\n**SOL/USDC**: 多头排列，EMA20 > EMA50，价格在均线上方，短期趋势偏多\n\n**风险分析**：\n- 账户夏普比率为0，历史表现平平，需要谨慎操作\n- ETH持仓目前亏损，但止损设置合理（距离当前价约0.6%）\n- BTC和ETH都显示空头排列，整体市场情绪偏谨慎\n- SOL虽然多头排列，但需要更多确认信号\n\n**持仓管理**：\nETH持仓止损2985设置合理（技术支撑位），止盈3060距离当前价约1.9%，风险回报比约1:3，符合稳健标准。当前价格3003.85距离止损还有缓冲空间。\n\n**交易机会评估**：\nSOL多头排列但缺乏其他技术指标确认，信号强度不足。BTC和ETH空头排列但未出现明确的入场信号。整体市场缺乏高质量交易机会。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:25:04.131804",
+    "case_id": "case_1763634304"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91941.5,
+            "mark": 91942.0,
+            "bid": 91941.0,
+            "ask": 91942.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91758.79098353561,
+            "ema50": 91892.40795218498,
+            "ema200": 95879.75,
+            "rsi14": 52.32059745025303,
+            "macd": {
+              "value": 231.07367023598636,
+              "signal": 147.17835982961455,
+              "histogram": 83.8953104063718
+            },
+            "atr14": 788.2411680218676,
+            "obv": -59237.73638,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 66.95441057458862,
+              "d": 71.9152064552658
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:28:35.607932"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3016.25,
+            "mark": 3016.3,
+            "bid": 3016.2,
+            "ask": 3016.3
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3023.3847521285998,
+            "ema50": 3043.653773410678,
+            "ema200": 3185.1980000000003,
+            "rsi14": 47.83792892455942,
+            "macd": {
+              "value": -4.03417781164535,
+              "signal": -7.881480058103845,
+              "histogram": 3.8473022464584954
+            },
+            "atr14": 38.10954781932384,
+            "obv": -799462.8701999999,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 61.65718927701032,
+              "d": 72.15812146386111
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.61761,
+            "stop_loss": 2985.0,
+            "take_profit": 3060.0
+          },
+          "timestamp": "2025-11-20T18:28:36.611521"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.975,
+            "mark": 141.98,
+            "bid": 141.97,
+            "ask": 142.0096
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.413600915084,
+            "ema50": 139.08617865683559,
+            "ema200": 142.55010000000001,
+            "rsi14": 57.443576845374814,
+            "macd": {
+              "value": 1.554111138055248,
+              "signal": 1.123741039551518,
+              "histogram": 0.43037009850373
+            },
+            "atr14": 1.9240627207365075,
+            "obv": -1020503.600000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 76.80921052631584,
+              "d": 81.75036408276793
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:28:37.744093"
+        }
+      },
+      "account": {
+        "balance": 118.345763,
+        "available": 96.810095,
+        "position_value": 107.680125,
+        "unrealized_pnl": -0.61761
+      },
+      "timestamp": "2025-11-20T18:28:37.744567"
+    },
+    "decision": "### 分析总结\n\n基于当前市场情况分析：\n\n1. **账户状态**：\n   - 总资产$118.35，当前持有ETH多单，浮动亏损$-0.62\n   - 夏普比率0.00，胜率0.0%，表明近期交易表现不佳\n   - 交易频率较高（24次/7天），可能存在过度交易问题\n\n2. **市场环境**：\n   - BTC：空头排列，价格在EMA20和EMA50下方，整体偏空\n   - ETH：空头排列，当前持仓为多单，与趋势方向相悖\n   - SOL：多头排列，是当前相对较强的币种\n\n3. **持仓分析**：\n   - ETH多单入场价$3033.50，当前价$3016.25，亏损约0.57%\n   - 止损$2985.00，止盈$3060.00，风险回报比约1:1.5，不够理想\n   - 持仓方向与EMA趋势相悖，增加了持仓风险\n\n4. **风险控制**：\n   - 根据夏普比率反馈，当前应严格控制交易频率\n   - 现有持仓与趋势方向不一致，需要谨慎管理\n   - 市场整体缺乏明确的多头信号\n\n基于稳健交易原则，当前应专注于管理现有持仓，避免开新仓。\n\n### 决策",
+    "execution_result": [
+      {
+        "signal": {
+          "action": "hold",
+          "symbol": "ETH/USDC:USDC",
+          "amount": 0.0357,
+          "leverage": 3,
+          "stop_loss": 2985.0,
+          "take_profit": 3080.0,
+          "confidence": 75,
+          "reason": "优化止盈至$3080以改善风险回报比至1:2.5，当前EMA空头排列但价格接近支撑，保持现有止损观察市场反应"
+        },
+        "result": {
+          "success": true,
+          "result": {
+            "status": "success",
+            "action": "modify_sl_tp",
+            "order_id": null,
+            "symbol": "ETH/USDC:USDC",
+            "executed_amount": null,
+            "executed_price": null,
+            "fee": null,
+            "message": "成功设置止盈止损（已取消 2 个旧订单）",
+            "error": null,
+            "position": null,
+            "timestamp": "2025-11-20T18:29:06.941572",
+            "raw_response": {
+              "cancelled_orders": [
+                "242222798151",
+                "242222812216"
+              ],
+              "new_orders": [
+                {
+                  "type": "stop_loss",
+                  "order_id": "242230544549",
+                  "price": 2985.0
+                },
+                {
+                  "type": "take_profit",
+                  "order_id": "242230558237",
+                  "price": 3080.0
+                }
+              ]
+            }
+          }
+        },
+        "timestamp": "2025-11-20T18:29:06.941795"
+      }
+    ],
+    "realized_pnl": null,
+    "reflection": "## 决策分析\n\n### 1. 这次决策合理吗？\n**基本合理**。决策的核心逻辑是正确的：\n- 识别了持仓与趋势方向相悖的风险\n- 注意到交易频率过高的问题\n- 选择了保守的持仓管理而非开新仓\n\n但决策深度不足，没有提出具体的持仓调整方案。\n\n### 2. 如果重来，会怎么做？\n**优化决策流程**：\n- **立即行动**：考虑减仓或平仓ETH多单，因为EMA空头排列且价格持续低于入场价\n- **重新配置**：将释放的资金转向SOL多头（EMA多头排列，技术面更强）\n- **严格纪律**：设置7天交易冷却期，强制降低交易频率\n- **风险调整**：新开仓位风险回报比至少1:2，止损设在关键支撑下方\n\n### 3. 经验总结\n趋势方向是持仓的第一考量因素\n高交易频率往往是亏损的前兆\n风险回报比低于1:2的交易不值得参与\n技术指标背离时要果断调整持仓\n资金管理比择时更重要",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:28:37.744608",
+    "case_id": "case_1763634517"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91966.5,
+            "mark": 91943.0,
+            "bid": 91947.9,
+            "ask": 91967.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91761.07669782132,
+            "ema50": 91893.34912865557,
+            "ema200": 95879.87,
+            "rsi14": 52.52690440291579,
+            "macd": {
+              "value": 232.98820015050296,
+              "signal": 147.5612658125179,
+              "histogram": 85.42693433798507
+            },
+            "atr14": 789.8840251647247,
+            "obv": -59212.06988,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 67.601834367413,
+              "d": 72.13101438620727
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:32:26.296329"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3016.65,
+            "mark": 3015.9,
+            "bid": 3016.6,
+            "ask": 3016.7
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3023.4418949857427,
+            "ema50": 3043.6773028224425,
+            "ema200": 3185.2009999999996,
+            "rsi14": 47.95285125783391,
+            "macd": {
+              "value": -3.986314563781889,
+              "signal": -7.871907408531153,
+              "histogram": 3.8855928447492643
+            },
+            "atr14": 38.202404962181,
+            "obv": -796732.8078999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 62.14459788789607,
+              "d": 72.32059100082301
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.58548,
+            "stop_loss": 2985.0,
+            "take_profit": 3120.0
+          },
+          "timestamp": "2025-11-20T18:32:27.078932"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 142.015,
+            "mark": 142.01,
+            "bid": 142.0087,
+            "ask": 142.02
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.4193152007983,
+            "ema50": 139.08853159801205,
+            "ema200": 142.5504,
+            "rsi14": 57.610472747206245,
+            "macd": {
+              "value": 1.5588974628415713,
+              "signal": 1.1246983045087826,
+              "histogram": 0.43419915833278866
+            },
+            "atr14": 1.928348435022222,
+            "obv": -1012179.8200000011,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 77.30263157894743,
+              "d": 81.91483776697845
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:32:28.277137"
+        }
+      },
+      "account": {
+        "balance": 118.377893,
+        "available": 96.835799,
+        "position_value": 107.694405,
+        "unrealized_pnl": -0.58548
+      },
+      "timestamp": "2025-11-20T18:32:28.277561"
+    },
+    "decision": "### 分析总结\n\n当前市场环境分析：\n\n1. **账户状态**：轻微亏损（-0.59美元），夏普比率为0，说明近期交易表现平平，需要更加谨慎\n\n2. **BTC趋势**：空头排列（EMA20 < EMA50），价格在EMA均线附近震荡，无明显方向性突破\n\n3. **ETH持仓**：当前持有多头仓位，浮亏-0.59美元，已设置止损2985和止盈3120，风险回报比合理（约1:2.5）\n\n4. **SOL机会**：多头排列（EMA20 > EMA50），但价格已从支撑位反弹至142附近，错过最佳入场点\n\n5. **市场环境**：BTC和ETH均显示空头排列，整体市场偏弱，SOL虽有上涨但需警惕整体市场拖累\n\n**关键观察**：\n- 现有ETH持仓止损设置合理，应继续持有观察\n- BTC和ETH空头排列，不宜开新多头仓位\n- SOL虽多头排列但已上涨较多，追高风险较大\n- 夏普比率为0，需要控制交易频率，避免过度交易\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:32:28.277602",
+    "case_id": "case_1763634748"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91889.5,
+            "mark": 91889.0,
+            "bid": 91889.0,
+            "ask": 91895.9
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91753.743364488,
+            "ema50": 91890.32952081243,
+            "ema200": 95879.485,
+            "rsi14": 51.8585891758183,
+            "macd": {
+              "value": 226.84575000806944,
+              "signal": 146.33277578403118,
+              "histogram": 80.51297422403826
+            },
+            "atr14": 789.8840251647247,
+            "obv": -59200.52758,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 65.52468303210142,
+              "d": 71.43863060777007
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:35:57.487288"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3013.95,
+            "mark": 3014.0,
+            "bid": 3013.9,
+            "ask": 3014.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3023.175228319076,
+            "ema50": 3043.567498900874,
+            "ema200": 3185.1869999999994,
+            "rsi14": 47.41216959222385,
+            "macd": {
+              "value": -4.2096763871441,
+              "signal": -7.916579773203596,
+              "histogram": 3.706903386059496
+            },
+            "atr14": 38.202404962181,
+            "obv": -792424.7134999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 59.87002437043044,
+              "d": 71.56239982833448
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.69615,
+            "stop_loss": 2985.0,
+            "take_profit": 3120.0
+          },
+          "timestamp": "2025-11-20T18:35:58.493484"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.895,
+            "mark": 141.93,
+            "bid": 141.89,
+            "ask": 141.9
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.40693424841734,
+            "ema50": 139.08343355879637,
+            "ema200": 142.54975000000002,
+            "rsi14": 57.20917638729279,
+            "macd": {
+              "value": 1.548527092471204,
+              "signal": 1.1226242304347092,
+              "histogram": 0.42590286203649486
+            },
+            "atr14": 1.928348435022222,
+            "obv": -1140422.2600000012,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 76.23355263157904,
+              "d": 81.55847811785566
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:35:59.483442"
+        }
+      },
+      "account": {
+        "balance": 118.267223,
+        "available": 96.747263,
+        "position_value": 107.598015,
+        "unrealized_pnl": -0.69615
+      },
+      "timestamp": "2025-11-20T18:35:59.483856"
+    },
+    "decision": "### 分析总结\n\n基于当前市场情况分析：\n\n1. **账户状态**：当前持有ETH多头仓位，浮动亏损$0.70，占总资产约0.6%，风险可控。可用资金$96.75，有足够保证金。\n\n2. **市场趋势分析**：\n   - **BTC**：EMA空头排列，价格在EMA50下方，整体偏空\n   - **ETH**：EMA空头排列，当前持仓为多头，与趋势方向不一致\n   - **SOL**：EMA多头排列，是当前相对强势的币种\n\n3. **持仓评估**：\n   - ETH多头持仓入场价$3033.50，当前价$3013.95，亏损约0.65%\n   - 止损$2985.00，距离当前价约1%，风险可控\n   - 止盈$3120.00，风险回报比约1:3.5，符合要求\n\n4. **交易机会**：\n   - SOL呈现多头排列，但当前价格已接近近期高位\n   - BTC和ETH整体偏空，不适合新开多头\n   - 市场缺乏明确的突破信号\n\n5. **风险控制**：\n   - 当前夏普比率为0，需要谨慎操作\n   - 持仓时间较短，应给予足够时间让趋势发展\n   - 现有持仓的风险回报比合理，应继续持有观察\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:35:59.483898",
+    "case_id": "case_1763634959"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91800.5,
+            "mark": 91801.0,
+            "bid": 91800.0,
+            "ask": 91801.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91745.2671740118,
+            "ema50": 91886.839324734,
+            "ema200": 95879.04,
+            "rsi14": 51.02938326083303,
+            "macd": {
+              "value": 219.74603490834124,
+              "signal": 144.91283276408552,
+              "histogram": 74.83320214425572
+            },
+            "atr14": 789.8840251647247,
+            "obv": -60091.73156,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 63.12381980037767,
+              "d": 70.63834286386215
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:39:31.116910"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3008.45,
+            "mark": 3008.5,
+            "bid": 3008.4,
+            "ask": 3008.57
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3022.632371176219,
+            "ema50": 3043.3439694891094,
+            "ema200": 3185.1584999999995,
+            "rsi14": 46.345296985259154,
+            "macd": {
+              "value": -4.664377241844704,
+              "signal": -8.007519944143716,
+              "histogram": 3.343142702299012
+            },
+            "atr14": 38.202404962181,
+            "obv": -831606.7962999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 55.23964256701872,
+              "d": 70.01893922719724
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.90678,
+            "stop_loss": 2985.0,
+            "take_profit": 3120.0
+          },
+          "timestamp": "2025-11-20T18:39:32.111310"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.645,
+            "mark": 141.66,
+            "bid": 141.64,
+            "ask": 141.65
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.38121996270306,
+            "ema50": 139.07284532350226,
+            "ema200": 142.54840000000002,
+            "rsi14": 56.21386680957019,
+            "macd": {
+              "value": 1.5269886309327205,
+              "signal": 1.1183165381270124,
+              "histogram": 0.40867209280570815
+            },
+            "atr14": 1.928348435022222,
+            "obv": -1147460.880000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 74.01315789473686,
+              "d": 80.81834653890827
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:39:33.170698"
+        }
+      },
+      "account": {
+        "balance": 118.056593,
+        "available": 96.578759,
+        "position_value": 107.401665,
+        "unrealized_pnl": -0.90678
+      },
+      "timestamp": "2025-11-20T18:39:33.171155"
+    },
+    "decision": "### 分析总结\n\n当前市场环境分析：\n\n1. **账户状态**：轻微亏损(-$0.91)，夏普比率为0，历史表现显示交易频率过高(7天27次)，胜率0%，表明存在过度交易问题。\n\n2. **BTC趋势**：空头排列，价格在EMA20和EMA50之间震荡，无明显方向性突破。\n\n3. **ETH持仓**：当前持有多头仓位，入场价$3033.50，现价$3008.45，轻微浮亏。止损$2985设置合理(距离现价约0.8%)，止盈$3120风险回报比约1:3。\n\n4. **SOL机会**：多头排列，价格在EMA之上，但考虑到当前账户状态和整体市场环境，信号强度不足以开新仓。\n\n5. **风险控制**：基于夏普比率反馈和过度交易历史，当前应优先保护现有持仓，避免新增风险。\n\n**决策逻辑**：现有ETH持仓止损设置合理，风险可控，应继续持有观察。BTC和SOL均无强信号，且账户需要降低交易频率，选择观望是最佳策略。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:39:33.171198",
+    "case_id": "case_1763635173"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91771.5,
+            "mark": 91780.0,
+            "bid": 91771.0,
+            "ask": 91772.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91742.50526924989,
+            "ema50": 91885.70206983204,
+            "ema200": 95878.895,
+            "rsi14": 50.76425362164773,
+            "macd": {
+              "value": 217.43264459494094,
+              "signal": 144.45015470140547,
+              "histogram": 72.98248989353547
+            },
+            "atr14": 789.8840251647247,
+            "obv": -60102.1024,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 62.341516050714866,
+              "d": 70.37757494730789
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:43:01.908203"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3008.45,
+            "mark": 3008.4,
+            "bid": 3008.4,
+            "ask": 3008.5
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3022.632371176219,
+            "ema50": 3043.3439694891094,
+            "ema200": 3185.1584999999995,
+            "rsi14": 46.345296985259154,
+            "macd": {
+              "value": -4.664377241844704,
+              "signal": -8.007519944143716,
+              "histogram": 3.343142702299012
+            },
+            "atr14": 38.202404962181,
+            "obv": -831826.1867999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 55.23964256701872,
+              "d": 70.01893922719724
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.89964,
+            "stop_loss": 2985.0,
+            "take_profit": 3120.0
+          },
+          "timestamp": "2025-11-20T18:43:02.961503"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.685,
+            "mark": 141.7,
+            "bid": 141.68,
+            "ask": 141.6999
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.3840771055602,
+            "ema50": 139.0740217940905,
+            "ema200": 142.54855,
+            "rsi14": 56.32274321582054,
+            "macd": {
+              "value": 1.5293817933259106,
+              "signal": 1.1187951706056505,
+              "histogram": 0.41058662272026014
+            },
+            "atr14": 1.928348435022222,
+            "obv": -1151697.070000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 74.25986842105267,
+              "d": 80.90058338101353
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:43:04.081499"
+        }
+      },
+      "account": {
+        "balance": 118.063733,
+        "available": 96.584471,
+        "position_value": 107.401665,
+        "unrealized_pnl": -0.89964
+      },
+      "timestamp": "2025-11-20T18:43:04.081962"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局，需要谨慎应对：\n\n**BTC/USDC**：空头排列明显，价格在EMA20和EMA50下方，短期趋势偏空。当前价格$91771.50接近EMA20的$91742.51，可能面临阻力。\n\n**ETH/USDC**：同样空头排列，当前持仓LONG 0.0357处于浮亏状态。入场价$3033.50，当前价$3008.45，亏损约0.8%。止损$2985.00设置合理（约1.6%风险），止盈$3120.00提供约3.7%潜在收益，风险回报比约1:2.3。\n\n**SOL/USDC**：唯一多头排列的币种，EMA20>$140.38高于EMA50>$139.07，短期趋势相对强势。\n\n**账户状态**：夏普比率0.00，胜率0.0%，交易频率较高（7天28次），表明存在过度交易问题。当前仅持有ETH多头仓位，风险可控。\n\n**决策逻辑**：\n- ETH持仓需要持有观察，止损设置合理，不应过早平仓\n- BTC和SOL均未达到开仓标准：BTC趋势偏空，SOL虽多头但缺乏明确的入场时机\n- 基于夏普比率优化原则，应减少交易频率，耐心等待高质量机会\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:43:04.082007",
+    "case_id": "case_1763635384"
+  },
+  {
+    "market_conditions": {
+      "assets": {
+        "BTC/USDC:USDC": {
+          "symbol": "BTC/USDC:USDC",
+          "price": {
+            "current": 91744.5,
+            "mark": 91741.0,
+            "bid": 91736.5,
+            "ask": 91745.0
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 91740.0290787737,
+            "ema50": 91884.68246198891,
+            "ema200": 95878.765,
+            "rsi14": 50.52888259285419,
+            "macd": {
+              "value": 215.35857052086794,
+              "signal": 144.03533988659086,
+              "histogram": 71.32323063427708
+            },
+            "atr14": 789.8840251647247,
+            "obv": -60114.10484,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 61.64014027515511,
+              "d": 70.1437830221213
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:46:36.534060"
+        },
+        "ETH/USDC:USDC": {
+          "symbol": "ETH/USDC:USDC",
+          "price": {
+            "current": 3006.45,
+            "mark": 3006.4,
+            "bid": 3006.24,
+            "ask": 3006.5
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 3022.4609426047905,
+            "ema50": 3043.273381253815,
+            "ema200": 3185.1494999999995,
+            "rsi14": 46.03705198403154,
+            "macd": {
+              "value": -4.807966985434632,
+              "signal": -8.036237892861703,
+              "histogram": 3.2282709074270706
+            },
+            "atr14": 38.202404962181,
+            "obv": -832540.0858999998,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 53.777416734362205,
+              "d": 69.53153061631173
+            }
+          },
+          "position": {
+            "size": 0.0357,
+            "side": "long",
+            "entry_price": 3033.5,
+            "unrealized_pnl": -0.96747,
+            "stop_loss": 2985.0,
+            "take_profit": 3120.0
+          },
+          "timestamp": "2025-11-20T18:46:37.594511"
+        },
+        "SOL/USDC:USDC": {
+          "symbol": "SOL/USDC:USDC",
+          "price": {
+            "current": 141.765,
+            "mark": 141.78,
+            "bid": 141.76,
+            "ask": 141.77
+          },
+          "stats_24h": {
+            "volume": null,
+            "change_percent": null,
+            "high": null,
+            "low": null
+          },
+          "indicators": {
+            "ema20": 140.39360091508402,
+            "ema50": 139.07794336271795,
+            "ema200": 142.54905,
+            "rsi14": 56.68873032797521,
+            "macd": {
+              "value": 1.5373590013031162,
+              "signal": 1.1203906122010916,
+              "histogram": 0.4169683891020246
+            },
+            "atr14": 1.928348435022222,
+            "obv": -1152498.690000001,
+            "volume_trend": null,
+            "stochastic": {
+              "k": 75.08223684210525,
+              "d": 81.17470618803107
+            }
+          },
+          "position": {
+            "size": 0.0,
+            "side": null,
+            "entry_price": null,
+            "unrealized_pnl": null,
+            "stop_loss": null,
+            "take_profit": null
+          },
+          "timestamp": "2025-11-20T18:46:38.662784"
+        }
+      },
+      "account": {
+        "balance": 117.995903,
+        "available": 96.530207,
+        "position_value": 107.330265,
+        "unrealized_pnl": -0.96747
+      },
+      "timestamp": "2025-11-20T18:46:38.663301"
+    },
+    "decision": "### 分析总结\n\n当前市场呈现分化格局：\n\n**BTC/USDC**：空头排列，价格$91,744.50低于EMA50的$91,884.68，显示短期弱势，但价格接近EMA20，可能面临方向选择。\n\n**ETH/USDC**：空头排列且当前持仓LONG处于亏损状态（入场$3,033.50 vs 现价$3,006.45）。持仓已有止损$2,985和止盈$3,120，风险回报比约1:2.5，相对合理。\n\n**SOL/USDC**：唯一多头排列品种，价格$141.76高于EMA20和EMA50，显示相对强势。\n\n**账户状态**：当前夏普比率为0，交易频率较高（7天29次），但平均盈亏为0，显示存在过度交易问题。现有ETH持仓风险可控，但整体市场环境偏谨慎。\n\n基于稳健交易原则，当前不宜开新仓，应专注于管理现有持仓。\n\n### 决策",
+    "execution_result": [],
+    "realized_pnl": null,
+    "reflection": "本次无交易执行，无需反思",
+    "lessons_learned": [],
+    "timestamp": "2025-11-20T18:46:38.663348",
+    "case_id": "case_1763635598"
   }
 ]
