@@ -35,6 +35,13 @@ from .strategy import (
     PerformanceMetrics,
     StrategyState,
 )
+from .trade_history import (
+    TradeRecord,
+    PositionRecord,
+)
+from .trade_history_manager import (
+    TradeHistoryManager,
+)
 
 __all__ = [
     # Enums
@@ -67,4 +74,8 @@ __all__ = [
     "StrategySignal",
     "PerformanceMetrics",
     "StrategyState",
+    # Trade History
+    "TradeRecord",
+    "PositionRecord",
+    "TradeHistoryManager",
 ]

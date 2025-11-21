@@ -41,6 +41,7 @@ async def run_new_architecture():
         # Layer 1: 执行层
         from src.adapters import HyperliquidAdapter
         from src.engine import TradingEngine
+        from src.models import TradeHistoryManager
 
         exchange_config = config.get_exchange_config(exchange)
         adapter = HyperliquidAdapter(
@@ -50,7 +51,11 @@ async def run_new_architecture():
         )
         await adapter.initialize()
 
-        engine = TradingEngine(adapter=adapter)
+        # 初始化交易历史管理器（使用统一数据库）
+        db_path = "data/nofn.db"
+        trade_history = TradeHistoryManager(db_path=db_path)
+
+        engine = TradingEngine(adapter=adapter, trade_history=trade_history)
         cprint("✅ Layer 1 (执行层) 初始化完成", "green")
 
         # Layer 2: 决策层
@@ -67,14 +72,15 @@ async def run_new_architecture():
         decision_maker = DecisionMaker(llm=llm)
         cprint("✅ Layer 2 (决策层) 初始化完成", "green")
 
-        # Layer 3: 学习层
+        # Layer 3: 学习层（使用 SqliteSaver Checkpointer + MemoryManager）
         from src.learning import LearningGraph, MemoryManager
 
-        memory_manager = MemoryManager(storage_dir="data/memory", llm=llm)
+        memory_manager = MemoryManager(db_path=db_path, llm=llm)
         learning_graph = LearningGraph(
             engine=engine,
             decision_maker=decision_maker,
-            memory_manager=memory_manager
+            memory_manager=memory_manager,
+            db_path=db_path  # 用于 SqliteSaver (checkpointer)
         )
         cprint("✅ Layer 3 (学习层) 初始化完成", "green")
 

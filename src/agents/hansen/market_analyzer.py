@@ -10,10 +10,7 @@ import numpy as np
 from ...adapters.base import BaseExchangeAdapter
 from ...models.strategy import TimeFrame, MarketIndicators
 from ...models.market import Candle
-from ...utils.indicators import (
-    ema, rsi, macd, atr,
-    stochastic_oscillator, obv,
-)
+from ...utils.indicators import ema, rsi, macd, atr
 
 
 class MarketAnalyzer:
@@ -43,6 +40,26 @@ class MarketAnalyzer:
         """
         indicators_map = {}
 
+        # 获取资金费率和持仓量（只需获取一次，所有时间框架共享）
+        funding_rate_val = None
+        open_interest_val = None
+
+        try:
+            # 获取资金费率
+            funding_rate_data = await self.adapter.get_funding_rate(symbol)
+            if funding_rate_data:
+                funding_rate_val = funding_rate_data.funding_rate
+        except Exception:
+            # 获取失败不影响其他指标
+            pass
+
+        try:
+            # 获取持仓量
+            open_interest_val = await self.adapter.get_open_interest(symbol)
+        except Exception:
+            # 获取失败不影响其他指标
+            pass
+
         for tf_str, candle in candle_data.items():
             if not candle:
                 continue
@@ -51,8 +68,10 @@ class MarketAnalyzer:
                 # 转换时间框架
                 tf = TimeFrame(tf_str)
 
-                # 计算指标
-                indicators = self._calculate_single_timeframe(candle, tf)
+                # 计算指标（传入资金费率和持仓量）
+                indicators = self._calculate_single_timeframe(
+                    candle, tf, funding_rate_val, open_interest_val
+                )
                 indicators_map[tf] = indicators.model_dump() if indicators else {}
 
             except Exception as e:
@@ -63,7 +82,9 @@ class MarketAnalyzer:
     def _calculate_single_timeframe(
         self,
         candles: List[Candle],
-        timeframe: TimeFrame
+        timeframe: TimeFrame,
+        funding_rate: Optional[Decimal] = None,
+        open_interest: Optional[Decimal] = None
     ) -> Optional[MarketIndicators]:
         """
         计算单个时间框架的技术指标
@@ -83,6 +104,10 @@ class MarketAnalyzer:
         # 1. 趋势指标
         ema_20_arr = ema(closes, 20)
         ema_50_arr = ema(closes, 50)
+        ema_200_arr = None
+        # EMA 200 需要更多数据点，如果数据足够才计算
+        if len(closes) >= 200:
+            ema_200_arr = ema(closes, 200)
 
         # 2. 动量指标
         rsi_7_arr = rsi(closes, 7)
@@ -91,12 +116,6 @@ class MarketAnalyzer:
 
         # 3. 波动率指标
         atr_arr = atr(highs, lows, closes, 14)
-
-        # 4. 成交量指标
-        obv_arr = obv(closes, volumes)
-
-        # 5. 超买超卖指标
-        stoch_k, stoch_d = stochastic_oscillator(highs, lows, closes, 14, 3)
 
         # 辅助函数：安全转换为 Decimal
         def safe_decimal(arr: np.ndarray) -> Optional[Decimal]:
@@ -135,6 +154,7 @@ class MarketAnalyzer:
             # 趋势指标（最近10个点数组）
             ema_20=safe_decimal_array(ema_20_arr, 10),
             ema_50=safe_decimal_array(ema_50_arr, 10),
+            ema_200=safe_decimal_array(ema_200_arr, 10) if ema_200_arr is not None else None,
             # 动量指标（最近10个点数组）
             macd_line=safe_decimal_array(macd_line, 10),
             macd_signal=safe_decimal_array(macd_signal_arr, 10),
@@ -146,10 +166,9 @@ class MarketAnalyzer:
             atr_percent=atr_percent,
             # 成交量指标
             volume_24h=Decimal(str(sum(volumes[-1440:] if len(volumes) > 1440 else volumes))),
-            obv=safe_decimal(obv_arr),
-            # 超买超卖指标
-            stoch_k=safe_decimal(stoch_k),
-            stoch_d=safe_decimal(stoch_d),
+            # 市场情绪指标（永续合约特有）
+            funding_rate=funding_rate,
+            open_interest=open_interest,
         )
 
     def analyze_trend(self, indicators: MarketIndicators) -> str:

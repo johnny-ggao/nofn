@@ -19,8 +19,8 @@ from datetime import datetime
 from termcolor import cprint
 
 from ..adapters.base import BaseExchangeAdapter
-from ..models import Position, PositionSide, OrderType, Candle
-from ..utils.indicators import ema, rsi, macd, atr, obv, stochastic_oscillator
+from ..models import Position, PositionSide, OrderType, Candle, TradeHistoryManager
+from ..utils.indicators import ema, rsi, macd, atr
 from .market_snapshot import MarketSnapshot, AssetData, IndicatorData
 
 
@@ -35,8 +35,9 @@ class TradingEngine:
     4. 管理数据缓存
     """
 
-    def __init__(self, adapter: BaseExchangeAdapter):
+    def __init__(self, adapter: BaseExchangeAdapter, trade_history: Optional[TradeHistoryManager] = None):
         self.adapter = adapter
+        self.trade_history = trade_history
         self._cache: Dict[str, any] = {}
         self._cache_ttl = 10  # 缓存10秒
 
@@ -111,13 +112,16 @@ class TradingEngine:
     async def _get_asset_data(self, symbol: str) -> Optional[AssetData]:
         """获取单个资产的完整数据"""
         try:
-            # 并发获取价格、K线、持仓
+            # 并发获取价格、K线（5分钟+4小时）、持仓、资金费率、持仓量
             price_task = self.adapter.get_latest_price(symbol)
-            candles_task = self.adapter.get_candles(symbol, '1h', limit=200)
+            candles_5m_task = self.adapter.get_candles(symbol, '5m', limit=200)  # 5分钟K线用于入场判断
+            candles_4h_task = self.adapter.get_candles(symbol, '4h', limit=200)  # 4小时K线用于大趋势判断
             position_task = self.adapter.get_position(symbol)
+            funding_rate_task = self.adapter.get_funding_rate(symbol)
+            open_interest_task = self.adapter.get_open_interest(symbol)
 
-            price, candles, position = await asyncio.gather(
-                price_task, candles_task, position_task,
+            price, candles_5m, candles_4h, position, funding_rate_data, open_interest = await asyncio.gather(
+                price_task, candles_5m_task, candles_4h_task, position_task, funding_rate_task, open_interest_task,
                 return_exceptions=True
             )
 
@@ -125,13 +129,35 @@ class TradingEngine:
             if isinstance(price, Exception):
                 cprint(f"⚠️  {symbol} 价格获取失败: {price}", "yellow")
                 return None
-            if isinstance(candles, Exception):
-                cprint(f"⚠️  {symbol} K线获取失败: {candles}", "yellow")
-                candles = []
+            if isinstance(candles_5m, Exception):
+                cprint(f"⚠️  {symbol} 5分钟K线获取失败: {candles_5m}", "yellow")
+                candles_5m = []
+            if isinstance(candles_4h, Exception):
+                cprint(f"⚠️  {symbol} 4小时K线获取失败: {candles_4h}", "yellow")
+                candles_4h = []
 
-            # 计算技术指标
-            indicators = self._calculate_indicators(candles) if candles else IndicatorData()
+            # 计算 5 分钟级别技术指标（入场信号）
+            indicators_5m = self._calculate_indicators(candles_5m) if candles_5m else IndicatorData()
 
+            # 计算 4 小时级别技术指标（大趋势判断）
+            indicators_4h = self._calculate_indicators(candles_4h) if candles_4h else None
+
+            # 提取市场情绪指标（独立于时间框架）
+            funding_rate_val = None
+            if not isinstance(funding_rate_data, Exception) and funding_rate_data:
+                funding_rate_val = float(funding_rate_data.funding_rate)
+
+            open_interest_val = None
+            if not isinstance(open_interest, Exception) and open_interest:
+                open_interest_val = float(open_interest)
+
+            # 计算成交量指标（从4小时K线）
+            volume_current = None
+            volume_avg = None
+            if candles_4h and len(candles_4h) >= 20:
+                volumes_4h = [float(c.volume) for c in candles_4h]
+                volume_current = volumes_4h[-1]  # 最新一根K线的成交量
+                volume_avg = sum(volumes_4h[-20:]) / 20  # 最近20根的平均
 
             # 构建持仓信息
             position_size = Decimal('0')
@@ -156,7 +182,12 @@ class TradingEngine:
                 mark_price=price.mark_price,
                 bid=price.bid_price,
                 ask=price.ask_price,
-                indicators=indicators,
+                indicators=indicators_5m,
+                indicators_4h=indicators_4h,
+                funding_rate=funding_rate_val,
+                open_interest=open_interest_val,
+                volume_current=volume_current,
+                volume_avg=volume_avg,
                 position_size=position_size,
                 position_side=position_side,
                 entry_price=entry_price,
@@ -187,7 +218,6 @@ class TradingEngine:
             closes = [float(c.close) for c in candles]
             highs = [float(c.high) for c in candles]
             lows = [float(c.low) for c in candles]
-            volumes = [float(c.volume) for c in candles]
 
             # 批量计算指标（返回数组，需要提取最后一个值）
             ema20_arr = ema(closes, 20)
@@ -211,13 +241,12 @@ class TradingEngine:
             atr14_arr = atr(highs, lows, closes, 14)
             atr14_val = float(atr14_arr[-1]) if len(atr14_arr) > 0 else 0.0
 
-            obv_arr = obv(closes, volumes)
-            obv_val = float(obv_arr[-1]) if len(obv_arr) > 0 else 0.0
-
-            # Stochastic 返回 (k_values, d_values) 两个数组
-            k_values, d_values = stochastic_oscillator(highs, lows, closes, 14, 3)
-            stoch_k = float(k_values[-1]) if len(k_values) > 0 else 50.0
-            stoch_d = float(d_values[-1]) if len(d_values) > 0 else 50.0
+            # 提取最近10个点的序列（从旧到新）
+            n_points = 10
+            prices_series = [float(closes[i]) for i in range(-min(n_points, len(closes)), 0)] if len(closes) > 0 else None
+            ema20_series = [float(ema20_arr[i]) for i in range(-min(n_points, len(ema20_arr)), 0)] if len(ema20_arr) > 0 else None
+            macd_series = [float(macd_line[i]) for i in range(-min(n_points, len(macd_line)), 0)] if len(macd_line) > 0 else None
+            rsi14_series = [float(rsi14_arr[i]) for i in range(-min(n_points, len(rsi14_arr)), 0)] if len(rsi14_arr) > 0 else None
 
             return IndicatorData(
                 ema20=ema20_val,
@@ -228,9 +257,11 @@ class TradingEngine:
                 macd_signal=macd_signal,
                 macd_histogram=macd_hist,
                 atr14=atr14_val,
-                obv=obv_val,
-                stoch_k=stoch_k,
-                stoch_d=stoch_d,
+                # 序列数据
+                prices_series=prices_series,
+                ema20_series=ema20_series,
+                macd_series=macd_series,
+                rsi14_series=rsi14_series,
             )
 
         except Exception as e:
@@ -286,6 +317,27 @@ class TradingEngine:
                     stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
                     take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
                 )
+
+                # 记录交易
+                if result.status.value == 'success' and self.trade_history:
+                    self.trade_history.record_trade(
+                        symbol=symbol,
+                        side='long',
+                        action='open',
+                        price=result.avg_price or Decimal(str(signal.get('price', 0))),
+                        amount=Decimal(str(signal['amount'])),
+                        leverage=signal.get('leverage', 1),
+                        fee=result.fee or Decimal('0'),
+                        note=f"Open long position"
+                    )
+                    # 更新持仓的止损止盈
+                    if signal.get('stop_loss') or signal.get('take_profit'):
+                        self.trade_history.update_position_sl_tp(
+                            symbol=symbol,
+                            stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
+                            take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
+                        )
+
                 return {'success': result.status.value == 'success', 'result': result}
 
             elif action == 'open_short':
@@ -298,10 +350,48 @@ class TradingEngine:
                     stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
                     take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
                 )
+
+                # 记录交易
+                if result.status.value == 'success' and self.trade_history:
+                    self.trade_history.record_trade(
+                        symbol=symbol,
+                        side='short',
+                        action='open',
+                        price=result.avg_price or Decimal(str(signal.get('price', 0))),
+                        amount=Decimal(str(signal['amount'])),
+                        leverage=signal.get('leverage', 1),
+                        fee=result.fee or Decimal('0'),
+                        note=f"Open short position"
+                    )
+                    # 更新持仓的止损止盈
+                    if signal.get('stop_loss') or signal.get('take_profit'):
+                        self.trade_history.update_position_sl_tp(
+                            symbol=symbol,
+                            stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
+                            take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
+                        )
+
                 return {'success': result.status.value == 'success', 'result': result}
 
             elif action == 'close_position':
+                # 先获取持仓信息以计算盈亏
+                position = await self.adapter.get_position(symbol)
+
                 result = await self.adapter.close_position(symbol=symbol)
+
+                # 记录交易
+                if result.status.value == 'success' and self.trade_history and position:
+                    self.trade_history.record_trade(
+                        symbol=symbol,
+                        side=position.side.value if position.side else 'long',
+                        action='close',
+                        price=result.avg_price or Decimal('0'),
+                        amount=position.amount,
+                        leverage=None,
+                        fee=result.fee or Decimal('0'),
+                        note=f"Close position manually"
+                    )
+
                 return {'success': result.status.value == 'success', 'result': result}
 
             elif action == 'set_stop_loss':
@@ -336,6 +426,15 @@ class TradingEngine:
                         stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
                         take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None
                     )
+
+                    # 更新持仓的止损止盈
+                    if result.status.value == 'success' and self.trade_history:
+                        self.trade_history.update_position_sl_tp(
+                            symbol=symbol,
+                            stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
+                            take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
+                        )
+
                     return {'success': result.status.value == 'success', 'result': result}
                 else:
                     return {'success': False, 'error': 'Position not found'}

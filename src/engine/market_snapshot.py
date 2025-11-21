@@ -28,13 +28,11 @@ class IndicatorData:
     # 波动率
     atr14: Optional[float] = None
 
-    # 成交量
-    obv: Optional[float] = None
-    volume_trend: Optional[str] = None
-
-    # 震荡指标
-    stoch_k: Optional[float] = None
-    stoch_d: Optional[float] = None
+    # 序列数据（最近N个点，用于展示趋势）
+    prices_series: Optional[List[float]] = None  # 价格序列
+    ema20_series: Optional[List[float]] = None  # EMA20序列
+    macd_series: Optional[List[float]] = None  # MACD序列
+    rsi14_series: Optional[List[float]] = None  # RSI14序列
 
     def to_dict(self) -> dict:
         return {
@@ -48,12 +46,6 @@ class IndicatorData:
                 'histogram': self.macd_histogram,
             },
             'atr14': self.atr14,
-            'obv': self.obv,
-            'volume_trend': self.volume_trend,
-            'stochastic': {
-                'k': self.stoch_k,
-                'd': self.stoch_d,
-            }
         }
 
 
@@ -75,7 +67,16 @@ class AssetData:
     low_24h: Optional[Decimal] = None
 
     # 技术指标
-    indicators: IndicatorData = field(default_factory=IndicatorData)
+    indicators: IndicatorData = field(default_factory=IndicatorData)  # 5分钟级别（入场信号）
+    indicators_4h: Optional[IndicatorData] = None  # 4小时级别（大趋势判断）
+
+    # 市场情绪指标（永续合约，独立于时间框架）
+    funding_rate: Optional[float] = None  # 资金费率
+    open_interest: Optional[float] = None  # 持仓量（USD，当前值）
+
+    # 成交量指标
+    volume_current: Optional[float] = None  # 当前成交量
+    volume_avg: Optional[float] = None  # 平均成交量（最近20根K线）
 
     # 持仓信息
     position_size: Decimal = Decimal('0')
@@ -109,6 +110,11 @@ class AssetData:
                 'low': float(self.low_24h) if self.low_24h else None,
             },
             'indicators': self.indicators.to_dict(),
+            'indicators_4h': self.indicators_4h.to_dict() if self.indicators_4h else None,
+            'market_sentiment': {
+                'funding_rate': self.funding_rate,
+                'open_interest': self.open_interest,
+            },
             'position': {
                 'size': float(self.position_size),
                 'side': self.position_side,
@@ -121,29 +127,90 @@ class AssetData:
         }
 
     def to_text(self) -> str:
-        """转换为文本（供LLM阅读）"""
-        lines = [
-            f"## {self.symbol}",
-            f"",
-            f"### 价格信息",
-            f"- 当前价: ${float(self.current_price):.2f}",
-        ]
+        """转换为文本（供LLM阅读）- 优化格式"""
+        lines = [f"## {self.symbol}", ""]
 
-        if self.change_24h_percent is not None:
-            change_emoji = "📈" if self.change_24h_percent > 0 else "📉"
-            lines.append(f"- 24小时涨跌: {change_emoji} {self.change_24h_percent:+.2f}%")
-
-        lines.append("")
-        lines.append("### 技术指标")
+        # ========== 当前快照 ==========
+        lines.append("**当前快照:**")
+        lines.append(f"- 当前价格 = ${float(self.current_price):.2f}")
 
         ind = self.indicators
-        if ind.ema20 and ind.ema50:
-            trend = "多头排列" if ind.ema20 > ind.ema50 else "空头排列"
-            lines.append(f"- EMA趋势: {trend} (EMA20: ${ind.ema20:.2f}, EMA50: ${ind.ema50:.2f})")
+        if ind.ema20:
+            lines.append(f"- 当前EMA20 = ${ind.ema20:.2f}")
+        if ind.macd_value is not None:
+            lines.append(f"- 当前MACD = {ind.macd_value:.2f}")
+        if ind.rsi14:
+            lines.append(f"- 当前RSI(14周期) = {ind.rsi14:.1f}")
 
-        if self.has_position():
+        lines.append("")
+
+        # ========== 永续合约指标 ==========
+        lines.append("**永续合约指标:**")
+        if self.open_interest is not None:
+            oi_m = self.open_interest / 1_000_000
+            lines.append(f"- 持仓量: ${oi_m:.2f}M")
+
+        if self.funding_rate is not None:
+            fr_percent = self.funding_rate * 100
+            lines.append(f"- 资金费率: {fr_percent:+.4f}%")
+
+        lines.append("")
+
+        # ========== 日内序列（5分钟级别）==========
+        lines.append("**日内序列（5分钟间隔，从旧到新）:**")
+        lines.append("")
+
+        if ind.prices_series:
+            prices_str = ", ".join([f"{p:.2f}" for p in ind.prices_series])
+            lines.append(f"中间价格: [{prices_str}]")
             lines.append("")
-            lines.append("### 当前持仓")
+
+        if ind.ema20_series:
+            ema20_str = ", ".join([f"{e:.2f}" for e in ind.ema20_series])
+            lines.append(f"EMA指标（20周期）: [{ema20_str}]")
+            lines.append("")
+
+        if ind.macd_series:
+            macd_str = ", ".join([f"{m:.2f}" for m in ind.macd_series])
+            lines.append(f"MACD指标: [{macd_str}]")
+            lines.append("")
+
+        if ind.rsi14_series:
+            rsi_str = ", ".join([f"{r:.1f}" for r in ind.rsi14_series])
+            lines.append(f"RSI指标（14周期）: [{rsi_str}]")
+            lines.append("")
+
+        # ========== 长期背景（4小时级别）==========
+        if self.indicators_4h:
+            lines.append("**长期背景（4小时时间框架）:**")
+            lines.append("")
+
+            ind_4h = self.indicators_4h
+            if ind_4h.ema20 and ind_4h.ema50:
+                lines.append(f"20周期EMA: ${ind_4h.ema20:.2f} vs. 50周期EMA: ${ind_4h.ema50:.2f}")
+                lines.append("")
+
+            if ind_4h.atr14:
+                lines.append(f"14周期ATR: ${ind_4h.atr14:.2f}")
+                lines.append("")
+
+            if self.volume_current and self.volume_avg:
+                lines.append(f"当前成交量: {self.volume_current:.2f} vs. 平均成交量: {self.volume_avg:.2f}")
+                lines.append("")
+
+            if ind_4h.macd_series:
+                macd_4h_str = ", ".join([f"{m:.2f}" for m in ind_4h.macd_series])
+                lines.append(f"MACD指标（4小时）: [{macd_4h_str}]")
+                lines.append("")
+
+            if ind_4h.rsi14_series:
+                rsi_4h_str = ", ".join([f"{r:.1f}" for r in ind_4h.rsi14_series])
+                lines.append(f"RSI指标（14周期，4小时）: [{rsi_4h_str}]")
+                lines.append("")
+
+        # ========== 当前持仓 ==========
+        if self.has_position():
+            lines.append("**当前持仓:**")
             lines.append(f"- 方向: {self.position_side.upper()}")
             lines.append(f"- 数量: {float(self.position_size)}")
             lines.append(f"- 入场价: ${float(self.entry_price):.2f}")
@@ -154,6 +221,7 @@ class AssetData:
                 lines.append(f"- 止损: ${float(self.stop_loss):.2f}")
             if self.take_profit:
                 lines.append(f"- 止盈: ${float(self.take_profit):.2f}")
+            lines.append("")
 
         return "\n".join(lines)
 

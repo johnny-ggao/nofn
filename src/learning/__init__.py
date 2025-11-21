@@ -2,7 +2,8 @@
 学习层 (Layer 3)
 
 LangGraph驱动的学习和进化系统
-- 记忆管理（Checkpointer）
+- SqliteSaver Checkpointer（状态持久化、断点恢复）
+- MemoryManager（SQLite 记忆管理 - 相似度匹配）
 - 反思学习（Reflection）
 - 策略优化（Optimization）
 

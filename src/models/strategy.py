@@ -42,6 +42,7 @@ class MarketIndicators(BaseModel):
     # Moving averages (arrays: most recent 10 points, newest to oldest)
     ema_20: Optional[List[Decimal]] = None
     ema_50: Optional[List[Decimal]] = None
+    ema_200: Optional[List[Decimal]] = None
 
     # MACD (arrays: most recent 10 points, newest to oldest)
     macd_line: Optional[List[Decimal]] = None
@@ -58,11 +59,10 @@ class MarketIndicators(BaseModel):
 
     # Volume
     volume_24h: Optional[Decimal] = None
-    obv: Optional[Decimal] = None
 
-    # Stochastic
-    stoch_k: Optional[Decimal] = None
-    stoch_d: Optional[Decimal] = None
+    # Market sentiment (Perpetual contracts specific)
+    funding_rate: Optional[Decimal] = None  # Current funding rate
+    open_interest: Optional[Decimal] = None  # Open interest in USD
 
 
 class TrendAnalysis(BaseModel):

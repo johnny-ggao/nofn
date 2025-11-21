@@ -8,7 +8,8 @@ from typing import TypedDict, List, Optional, Dict, Any
 from datetime import datetime
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
+from langchain_openai import ChatOpenAI
 from termcolor import cprint
 
 from ..engine.trading_engine import TradingEngine
@@ -61,17 +62,13 @@ class LearningGraph:
         self,
         engine: TradingEngine,
         decision_maker: DecisionMaker,
-        memory_manager: MemoryManager,
-        db_path: str = "data/nofn.db"
+        memory_manager: MemoryManager
     ):
         self.engine = engine
         self.decision_maker = decision_maker
         self.memory = memory_manager
-        self.db_path = db_path
 
-        # Graph 延迟初始化（需要异步创建 checkpointer）
-        self.graph = None
-        self._checkpointer = None
+        self.graph = self._build_graph()
 
     def _build_graph(self) -> StateGraph:
         """构建学习图"""
@@ -97,9 +94,9 @@ class LearningGraph:
         workflow.add_edge("reflect", "update_memory")
         workflow.add_edge("update_memory", END)
 
-        # 异步初始化 checkpointer
-        # 注意：checkpointer 将在 _ensure_graph_initialized 中创建
-        return workflow
+        # 编译（使用内存checkpointer）
+        checkpointer = MemorySaver()
+        return workflow.compile(checkpointer=checkpointer)
 
     async def _get_market_data(self, state: TradingState) -> Dict[str, Any]:
         """获取市场数据（Layer 1）"""
@@ -374,13 +371,9 @@ class LearningGraph:
 
         cprint(f"✅ 案例已保存: {case.case_id}", "green")
 
-        # 🆕 检查是否需要生成摘要（异步，不阻塞主流程）
-        asyncio.create_task(self._check_and_generate_summary())
-
         return {}
 
-    @staticmethod
-    def _build_reflection_prompt(state: TradingState) -> str:
+    def _build_reflection_prompt(self, state: TradingState) -> str:
         """构建反思提示"""
         lines = [
             "请反思以下交易过程：",
@@ -408,8 +401,7 @@ class LearningGraph:
 
         return "\n".join(lines)
 
-    @staticmethod
-    def _extract_lessons(reflection_text: str) -> List[str]:
+    def _extract_lessons(self, reflection_text: str) -> List[str]:
         """从反思文本中提取经验教训"""
         lessons = []
 
@@ -436,26 +428,8 @@ class LearningGraph:
 
         return lessons[:5]  # 最多保留5条
 
-    async def _ensure_graph_initialized(self):
-        """确保 graph 已初始化（异步）"""
-        if self.graph is None:
-            import aiosqlite
-
-            # 创建异步 SQLite 连接
-            conn = await aiosqlite.connect(self.db_path)
-            self._checkpointer = AsyncSqliteSaver(conn)
-
-            # 编译 graph
-            workflow = self._build_graph()
-            self.graph = workflow.compile(checkpointer=self._checkpointer)
-
-            cprint(f"✅ Graph 和 Checkpointer (AsyncSqliteSaver) 初始化完成: {self.db_path}", "green")
-
     async def run_iteration(self, symbols: List[str], iteration: int = 0):
         """运行一次迭代"""
-        # 确保 graph 已初始化
-        await self._ensure_graph_initialized()
-
         initial_state = {
             'symbols': symbols,
             'iteration': iteration,
@@ -472,74 +446,6 @@ class LearningGraph:
             import traceback
             traceback.print_exc()
             return None
-
-    async def _check_and_generate_summary(self):
-        """
-        智能检查是否需要生成摘要
-
-        触发条件（满足任一即触发）：
-        1. 首次摘要：累积 20 个案例
-        2. 时间周期：距离上次摘要 ≥ 7 天（且有至少 10 个新案例）
-        3. 案例数量：每 50 个案例
-        """
-        try:
-            stats = self.memory._get_db_stats()
-            cases_count = stats['cases_count']
-
-            # 获取最近的摘要
-            recent_summaries = self.memory._get_recent_summaries(limit=1)
-
-            should_generate = False
-            reason = ""
-
-            if not recent_summaries:
-                # 首次摘要：累积 20 个案例
-                if cases_count >= 20:
-                    should_generate = True
-                    reason = f"首次摘要（累积 {cases_count} 个案例）"
-            else:
-                last_summary = recent_summaries[0]
-                days_since = (datetime.now() - last_summary.period_end).days
-                cases_since = cases_count - last_summary.total_cases
-
-                # 条件1：时间周期（7天）
-                if days_since >= 7 and cases_since >= 10:
-                    should_generate = True
-                    reason = f"距离上次摘要 {days_since} 天（新增 {cases_since} 个案例）"
-
-                # 条件2：案例数阈值（每50个）
-                elif cases_count > 0 and cases_count % 50 == 0:
-                    should_generate = True
-                    reason = f"案例数达到 {cases_count}"
-
-            if should_generate:
-                cprint(f"\n📝 触发摘要生成: {reason}", "yellow")
-                await self._generate_summary_background()
-
-        except Exception as e:
-            # 静默失败，不影响主流程
-            cprint(f"⚠️  摘要检查失败: {e}", "red")
-
-    async def _generate_summary_background(self):
-        """后台生成摘要（不阻塞主流程）"""
-        try:
-            cprint("🔄 开始生成摘要（后台任务）...", "cyan")
-            summary = await self.memory.generate_weekly_summary()
-
-            if summary:
-                cprint(f"✅ 摘要生成完成: {summary.summary_id}", "green")
-                cprint(f"   覆盖案例: {summary.total_cases} 个", "green")
-                cprint(f"   真实交易: {summary.total_trades} 笔", "green")
-                cprint(f"   关键模式: {len(summary.key_patterns)} 条", "green")
-                cprint(f"   成功策略: {len(summary.successful_strategies)} 条", "green")
-                cprint(f"   核心经验: {len(summary.lessons)} 条", "green")
-            else:
-                cprint("ℹ️  案例数不足，跳过摘要生成", "yellow")
-
-        except Exception as e:
-            cprint(f"❌ 摘要生成失败: {e}", "red")
-            import traceback
-            traceback.print_exc()
 
     async def run_loop(
         self,

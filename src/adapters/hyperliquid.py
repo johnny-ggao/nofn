@@ -1063,6 +1063,46 @@ class HyperliquidAdapter(BaseExchangeAdapter):
         except Exception as e:
             raise Exception(f"获取资金费率失败: {str(e)}")
 
+    async def get_open_interest(
+        self,
+        symbol: str,
+        **params
+    ) -> Optional[Decimal]:
+        """获取持仓量"""
+        try:
+            # CCXT 的持仓量接口
+            # 注意：不是所有交易所都支持这个接口
+            oi_data = await self._exchange.fetch_open_interest(symbol, params)
+
+            # fetch_open_interest 返回的数据结构：
+            # {
+            #     'symbol': 'BTC/USDC:USDC',
+            #     'openInterestAmount': 1234.56,  # 合约数量
+            #     'openInterestValue': 123456.78, # USD 价值
+            #     'timestamp': 1234567890,
+            #     ...
+            # }
+
+            # 优先使用 USD 价值，如果没有则使用合约数量
+            if oi_data.get('openInterestValue') is not None:
+                return Decimal(str(oi_data['openInterestValue']))
+            elif oi_data.get('openInterestAmount') is not None:
+                # 如果只有合约数量，尝试乘以当前价格估算 USD 价值
+                amount = Decimal(str(oi_data['openInterestAmount']))
+                # 尝试从数据中获取价格
+                if oi_data.get('price'):
+                    return amount * Decimal(str(oi_data['price']))
+                else:
+                    # 无法计算 USD 价值，返回 None
+                    return None
+            else:
+                return None
+
+        except Exception as e:
+            # 如果交易所不支持或获取失败，静默返回 None
+            # 持仓量不是关键指标，不应该因为获取失败而中断流程
+            return None
+
     async def get_latest_price(
         self,
         symbol: str,

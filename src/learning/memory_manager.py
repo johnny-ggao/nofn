@@ -1,16 +1,20 @@
 """
-记忆管理器
+记忆管理器（SQLite 版本）
 
 存储和检索交易案例，使用分层记忆架构：
 - 短期记忆（7天）：详细案例
 - 中期记忆（周）：摘要
 - 长期记忆（月）：核心经验
+
+使用 SQLite 数据库进行持久化存储
 """
+import sqlite3
 import json
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
+import threading
 
 from numpy import floating
 
@@ -22,10 +26,10 @@ class TradingCase:
     market_conditions: dict  # 当时的市场快照
 
     # 决策
-    decision: dict  # 当时的决策
+    decision: str  # 当时的决策（LLM分析文本）
 
     # 执行结果
-    execution_result: Optional[dict] = None  # 执行结果
+    execution_result: Optional[List[dict]] = None  # 执行结果
     realized_pnl: Optional[float] = None  # 已实现盈亏
 
     # 反思
@@ -115,136 +119,192 @@ class MemorySummary:
 
 class MemoryManager:
     """
-    记忆管理器
+    记忆管理器（使用 SQLite）
 
     职责:
     1. 存储交易案例
     2. 检索相关案例
     3. 分析成功/失败模式
-    4. 持久化到磁盘
+    4. 持久化到 SQLite 数据库
+    5. 生成和存储记忆摘要
     """
 
-    def __init__(self, storage_dir: str = "data/memory", llm=None):
-        self.storage_dir = Path(storage_dir)
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, db_path: str = "data/nofn.db", llm=None):
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.cases: List[TradingCase] = []
-        self.summaries: List[MemorySummary] = []
+        self._local = threading.local()
         self.llm = llm  # LLM用于生成摘要
 
-        self._load_from_disk()
-        self._load_summaries()
+        # 初始化数据库
+        self._init_database()
+
+        # 加载统计信息
+        stats = self._get_db_stats()
+        print(f"✅ 加载了 {stats['cases_count']} 个历史案例, {stats['summaries_count']} 个摘要")
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """获取线程本地的数据库连接"""
+        if not hasattr(self._local, 'conn'):
+            self._local.conn = sqlite3.connect(str(self.db_path))
+            self._local.conn.row_factory = sqlite3.Row
+        return self._local.conn
+
+    def _init_database(self):
+        """初始化数据库表"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # 创建交易案例表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS trading_cases (
+                case_id TEXT PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                market_conditions TEXT NOT NULL,
+                decision TEXT NOT NULL,
+                execution_result TEXT,
+                realized_pnl REAL,
+                reflection TEXT,
+                lessons_learned TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # 创建索引
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_cases_timestamp ON trading_cases(timestamp DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_cases_realized_pnl ON trading_cases(realized_pnl)')
+
+        # 创建记忆摘要表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS memory_summaries (
+                summary_id TEXT PRIMARY KEY,
+                period_start TEXT NOT NULL,
+                period_end TEXT NOT NULL,
+                period_type TEXT NOT NULL,
+                total_cases INTEGER NOT NULL,
+                total_trades INTEGER NOT NULL,
+                win_rate REAL NOT NULL,
+                avg_pnl REAL NOT NULL,
+                sharpe_ratio REAL NOT NULL,
+                key_patterns TEXT NOT NULL,
+                successful_strategies TEXT NOT NULL,
+                failed_strategies TEXT NOT NULL,
+                lessons TEXT NOT NULL,
+                market_insights TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        ''')
+
+        # 创建索引
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_summaries_period ON memory_summaries(period_start DESC)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_summaries_type ON memory_summaries(period_type)')
+
+        conn.commit()
+
+    def _get_db_stats(self) -> dict:
+        """获取数据库统计信息"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT COUNT(*) FROM trading_cases')
+        cases_count = cursor.fetchone()[0]
+
+        cursor.execute('SELECT COUNT(*) FROM memory_summaries')
+        summaries_count = cursor.fetchone()[0]
+
+        return {
+            'cases_count': cases_count,
+            'summaries_count': summaries_count
+        }
 
     def add_case(self, case: TradingCase):
         """添加交易案例"""
-        self.cases.append(case)
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-        # 自动清理旧案例
-        self._cleanup_old_cases()
+        cursor.execute('''
+            INSERT INTO trading_cases
+            (case_id, timestamp, market_conditions, decision, execution_result,
+             realized_pnl, reflection, lessons_learned)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            case.case_id,
+            case.timestamp.isoformat(),
+            json.dumps(case.market_conditions, ensure_ascii=False),
+            case.decision,
+            json.dumps(case.execution_result, ensure_ascii=False) if case.execution_result else None,
+            float(case.realized_pnl) if case.realized_pnl is not None else None,
+            case.reflection,
+            json.dumps(case.lessons_learned, ensure_ascii=False) if case.lessons_learned else None,
+        ))
 
-        self._save_to_disk()
+        conn.commit()
+
+        # 自动清理旧案例（保留最近1000个）
+        self._cleanup_old_cases(max_cases=1000, keep_days=30)
 
     def _cleanup_old_cases(self, max_cases: int = 1000, keep_days: int = 30):
         """
-        清理旧案例，保留有价值的记忆
+        清理旧案例
 
         策略：
         1. 保留最近 keep_days 天的所有案例
-        2. 对于更早的案例，只保留有交易执行的
-        3. 总数不超过 max_cases
-        4. 被清理的案例归档到单独文件
+        2. 总数不超过 max_cases
         """
-        from datetime import datetime, timedelta
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-        if len(self.cases) <= max_cases:
+        # 统计总数
+        cursor.execute('SELECT COUNT(*) FROM trading_cases')
+        total_count = cursor.fetchone()[0]
+
+        if total_count <= max_cases:
             return
 
-        cutoff_date = datetime.now() - timedelta(days=keep_days)
+        # 保留最近的 max_cases 个案例
+        cutoff_date = (datetime.now() - timedelta(days=keep_days)).isoformat()
 
-        # 分类案例
-        recent_cases = []      # 最近的案例（全部保留）
-        valuable_old = []      # 旧的但有价值的案例
-        to_archive = []        # 需要归档的案例
+        cursor.execute('''
+            DELETE FROM trading_cases
+            WHERE case_id IN (
+                SELECT case_id FROM trading_cases
+                WHERE timestamp < ?
+                ORDER BY timestamp DESC
+                LIMIT -1 OFFSET ?
+            )
+        ''', (cutoff_date, max_cases))
 
-        for case in self.cases:
-            if case.timestamp >= cutoff_date:
-                # 最近的案例全部保留
-                recent_cases.append(case)
-            else:
-                # 旧案例：只保留有交易执行的
-                if case.execution_result and len(case.execution_result) > 0:
-                    valuable_old.append(case)
-                else:
-                    to_archive.append(case)
+        deleted = cursor.rowcount
+        if deleted > 0:
+            print(f"📊 记忆清理: 删除了 {deleted} 个旧案例, 保留最近 {max_cases} 个")
 
-        # 归档被清理的案例
-        if to_archive:
-            self._archive_cases(to_archive)
+        conn.commit()
 
-        # 合并并限制总数
-        self.cases = recent_cases + valuable_old
-
-        # 如果还是太多，按时间倒序保留前 max_cases 个
-        if len(self.cases) > max_cases:
-            # 超出部分也归档
-            self.cases.sort(key=lambda x: x.timestamp, reverse=True)
-            overflow = self.cases[max_cases:]
-            if overflow:
-                self._archive_cases(overflow)
-            self.cases = self.cases[:max_cases]
-
-        print(f"📊 记忆清理: 保留 {len(recent_cases)} 个最近案例 + {len(valuable_old)} 个有价值旧案例, 归档 {len(to_archive)} 个")
-
-    def _archive_cases(self, cases: List[TradingCase]):
-        """归档案例到月度文件"""
-        from datetime import datetime
-        import json
-
-        archive_dir = self.storage_dir / "archives"
-        archive_dir.mkdir(exist_ok=True)
-
-        # 按月分组
-        by_month = {}
-        for case in cases:
-            month_key = case.timestamp.strftime("%Y%m")
-            if month_key not in by_month:
-                by_month[month_key] = []
-            by_month[month_key].append(case)
-
-        # 保存到对应月份的归档文件
-        for month_key, month_cases in by_month.items():
-            archive_file = archive_dir / f"cases_{month_key}.json"
-
-            # 加载现有归档（如果存在）
-            existing = []
-            if archive_file.exists():
-                try:
-                    with open(archive_file, 'r', encoding='utf-8') as f:
-                        existing = json.load(f)
-                except Exception:
-                    pass
-
-            # 合并新旧案例
-            existing_ids = {c.get('case_id') for c in existing}
-            new_cases = [c.to_dict() for c in month_cases if c.case_id not in existing_ids]
-
-            if new_cases:
-                all_cases = existing + new_cases
-                with open(archive_file, 'w', encoding='utf-8') as f:
-                    json.dump(all_cases, f, indent=2, ensure_ascii=False)
-
-    def get_recent_cases(self, days: int = 7) -> List[TradingCase]:
+    def get_recent_cases(self, days: int = 7, limit: Optional[int] = None) -> List[TradingCase]:
         """获取最近N天的案例"""
-        from datetime import timedelta
-        cutoff = datetime.now() - timedelta(days=days)
-        return [case for case in self.cases if case.timestamp >= cutoff]
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+
+        query = '''
+            SELECT * FROM trading_cases
+            WHERE timestamp >= ?
+            ORDER BY timestamp DESC
+        '''
+
+        if limit:
+            query += f' LIMIT {limit}'
+
+        cursor.execute(query, (cutoff,))
+
+        return [self._row_to_case(row) for row in cursor.fetchall()]
 
     def search_similar(self, market_conditions: dict, k: int = 5) -> List[TradingCase]:
         """
         检索相似案例
 
         简化版：基于市场趋势相似度
-        未来可以使用向量嵌入提升精度
         """
         # 提取关键特征
         def extract_features(conditions: dict) -> dict:
@@ -258,6 +318,9 @@ class MemoryManager:
             return features
 
         target_features = extract_features(market_conditions)
+
+        # 获取所有案例
+        cases = self.get_recent_cases(days=30)  # 只搜索最近30天
 
         # 计算相似度并排序
         def similarity_score(case: TradingCase) -> float:
@@ -279,21 +342,17 @@ class MemoryManager:
             return score
 
         # 排序并返回top k
-        scored_cases = [(case, similarity_score(case)) for case in self.cases]
+        scored_cases = [(case, similarity_score(case)) for case in cases]
         scored_cases.sort(key=lambda x: x[1], reverse=True)
 
         return [case for case, score in scored_cases[:k] if score > 0]
 
     def get_success_rate(self, conditions: Optional[dict] = None) -> float:
-        """
-        计算成功率
-
-        如果提供条件，则计算该条件下的成功率
-        """
+        """计算成功率"""
         if conditions:
             matching = self.search_similar(conditions, k=20)
         else:
-            matching = self.cases
+            matching = self.get_recent_cases(days=30)
 
         if not matching:
             return 0.5  # 默认50%
@@ -350,12 +409,12 @@ class MemoryManager:
         lines = ["## 历史记忆", ""]
 
         # 1. 添加历史摘要（最重要的部分）
-        if self.summaries:
+        summaries = self._get_recent_summaries(limit=2)
+        if summaries:
             lines.append("### 历史经验总结")
             lines.append("")
 
-            # 显示最近2个摘要
-            for summary in self.summaries[-2:]:
+            for summary in summaries:
                 period_name = "每周" if summary.period_type == 'weekly' else "每月"
                 lines.append(f"#### {period_name}摘要 ({summary.period_start.strftime('%Y-%m-%d')} - {summary.period_end.strftime('%Y-%m-%d')})")
                 lines.append(f"- 交易: {summary.total_trades} 次, 胜率 {summary.win_rate*100:.1f}%, 夏普 {summary.sharpe_ratio:.2f}")
@@ -406,51 +465,18 @@ class MemoryManager:
 
         return "\n".join(lines)
 
-    def _save_to_disk(self):
-        """持久化到磁盘"""
-        try:
-            file_path = self.storage_dir / "cases.json"
-            data = [case.to_dict() for case in self.cases]
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"⚠️  保存记忆失败: {e}")
+    def _get_recent_summaries(self, limit: int = 2) -> List[MemorySummary]:
+        """获取最近的摘要"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
 
-    def _load_from_disk(self):
-        """从磁盘加载"""
-        try:
-            file_path = self.storage_dir / "cases.json"
-            if file_path.exists():
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                self.cases = [TradingCase.from_dict(case_data) for case_data in data]
-                print(f"✅ 加载了 {len(self.cases)} 个历史案例")
-        except Exception as e:
-            print(f"⚠️  加载记忆失败: {e}")
-            self.cases = []
+        cursor.execute('''
+            SELECT * FROM memory_summaries
+            ORDER BY period_start DESC
+            LIMIT ?
+        ''', (limit,))
 
-    def _load_summaries(self):
-        """加载摘要"""
-        try:
-            summary_file = self.storage_dir / "summaries.json"
-            if summary_file.exists():
-                with open(summary_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                self.summaries = [MemorySummary.from_dict(s) for s in data]
-                print(f"✅ 加载了 {len(self.summaries)} 个记忆摘要")
-        except Exception as e:
-            print(f"⚠️  加载摘要失败: {e}")
-            self.summaries = []
-
-    def _save_summaries(self):
-        """保存摘要"""
-        try:
-            summary_file = self.storage_dir / "summaries.json"
-            data = [s.to_dict() for s in self.summaries]
-            with open(summary_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"⚠️  保存摘要失败: {e}")
+        return [self._row_to_summary(row) for row in cursor.fetchall()]
 
     async def generate_weekly_summary(self) -> Optional[MemorySummary]:
         """生成每周摘要"""
@@ -461,7 +487,16 @@ class MemoryManager:
         now = datetime.now()
         week_start = now - timedelta(days=7)
 
-        weekly_cases = [c for c in self.cases if week_start <= c.timestamp <= now]
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT * FROM trading_cases
+            WHERE timestamp >= ? AND timestamp <= ?
+            ORDER BY timestamp DESC
+        ''', (week_start.isoformat(), now.isoformat()))
+
+        weekly_cases = [self._row_to_case(row) for row in cursor.fetchall()]
 
         if len(weekly_cases) < 5:  # 案例太少，跳过
             return None
@@ -484,17 +519,43 @@ class MemoryManager:
             **self._parse_summary_text(summary_text)
         )
 
-        # 保存并删除旧案例
-        self.summaries.append(summary)
-        self._save_summaries()
-
-        # 删除已摘要的案例
-        self.cases = [c for c in self.cases if c.timestamp > week_start or c.timestamp < (week_start - timedelta(days=7))]
-        self._save_to_disk()
+        # 保存摘要
+        self._save_summary(summary)
 
         print(f"📝 生成每周摘要: {len(weekly_cases)} 个案例 → 1 个摘要")
 
         return summary
+
+    def _save_summary(self, summary: MemorySummary):
+        """保存摘要到数据库"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT OR REPLACE INTO memory_summaries
+            (summary_id, period_start, period_end, period_type, total_cases, total_trades,
+             win_rate, avg_pnl, sharpe_ratio, key_patterns, successful_strategies,
+             failed_strategies, lessons, market_insights, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            summary.summary_id,
+            summary.period_start.isoformat(),
+            summary.period_end.isoformat(),
+            summary.period_type,
+            summary.total_cases,
+            summary.total_trades,
+            summary.win_rate,
+            summary.avg_pnl,
+            summary.sharpe_ratio,
+            json.dumps(summary.key_patterns, ensure_ascii=False),
+            json.dumps(summary.successful_strategies, ensure_ascii=False),
+            json.dumps(summary.failed_strategies, ensure_ascii=False),
+            json.dumps(summary.lessons, ensure_ascii=False),
+            summary.market_insights,
+            summary.created_at.isoformat(),
+        ))
+
+        conn.commit()
 
     def _calculate_stats(self, cases: List[TradingCase]) -> dict:
         """计算统计数据"""
@@ -597,10 +658,7 @@ class MemoryManager:
             lines.append(f"时间: {case.timestamp.strftime('%Y-%m-%d %H:%M')}")
 
             # 决策
-            if isinstance(case.decision, dict):
-                decision_type = case.decision.get('decision_type', 'unknown')
-                lines.append(f"决策: {decision_type}")
-            elif isinstance(case.decision, str):
+            if isinstance(case.decision, str):
                 # 截取前200字符
                 lines.append(f"分析: {case.decision[:200]}...")
 
@@ -651,3 +709,46 @@ class MemoryManager:
                 'lessons': [],
                 'market_insights': summary_text[:200] if summary_text else '',
             }
+
+    def _row_to_case(self, row: sqlite3.Row) -> TradingCase:
+        """将数据库行转换为 TradingCase"""
+        return TradingCase(
+            case_id=row['case_id'],
+            timestamp=datetime.fromisoformat(row['timestamp']),
+            market_conditions=json.loads(row['market_conditions']),
+            decision=row['decision'],
+            execution_result=json.loads(row['execution_result']) if row['execution_result'] else None,
+            realized_pnl=row['realized_pnl'],
+            reflection=row['reflection'],
+            lessons_learned=json.loads(row['lessons_learned']) if row['lessons_learned'] else None,
+        )
+
+    def _row_to_summary(self, row: sqlite3.Row) -> MemorySummary:
+        """将数据库行转换为 MemorySummary"""
+        return MemorySummary(
+            summary_id=row['summary_id'],
+            period_start=datetime.fromisoformat(row['period_start']),
+            period_end=datetime.fromisoformat(row['period_end']),
+            period_type=row['period_type'],
+            total_cases=row['total_cases'],
+            total_trades=row['total_trades'],
+            win_rate=row['win_rate'],
+            avg_pnl=row['avg_pnl'],
+            sharpe_ratio=row['sharpe_ratio'],
+            key_patterns=json.loads(row['key_patterns']),
+            successful_strategies=json.loads(row['successful_strategies']),
+            failed_strategies=json.loads(row['failed_strategies']),
+            lessons=json.loads(row['lessons']),
+            market_insights=row['market_insights'],
+            created_at=datetime.fromisoformat(row['created_at']),
+        )
+
+    def close(self):
+        """关闭数据库连接"""
+        if hasattr(self._local, 'conn'):
+            self._local.conn.close()
+            delattr(self._local, 'conn')
+
+    def __del__(self):
+        """析构时关闭连接"""
+        self.close()

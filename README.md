@@ -18,8 +18,9 @@
 
 **Layer 3: 学习层 (LearningGraph)**
 - LangGraph 编排的学习工作流
-- 状态管理、记忆检索、反思学习
-- 持续进化和策略优化
+- SqliteSaver 持久化 checkpointer（状态管理、断点恢复）
+- MemoryManager 记忆检索（SQLite 相似度匹配）
+- 反思学习、持续进化和策略优化
 
 ### 🔄 LangGraph 工作流
 
@@ -47,7 +48,8 @@ Market Data → Retrieve Memory → Decide → Execute → Reflect → Update Me
 - **三层记忆架构** - 短期案例、周期摘要、长期经验库
 - **智能压缩** - LLM 自动生成记忆摘要，压缩率 99.7%
 - **自动清理** - 保留有价值案例，归档历史数据
-- **相似度检索** - 基于市场条件匹配历史案例
+- **相似度检索** - 基于市场特征的相似度匹配（SQLite 存储）
+- **状态持久化** - SqliteSaver checkpointer 支持断点恢复
 - **反思机制** - LLM 分析决策质量并提取经验
 - **经验积累** - 持续优化交易策略
 
@@ -132,6 +134,13 @@ uv run python main.py --max-iterations 10
 
 # 查看帮助
 uv run python main.py --help
+
+# 查看交易记录和持仓
+uv run python view_trades.py --type all        # 查看所有信息
+uv run python view_trades.py --type open       # 查看当前持仓
+uv run python view_trades.py --type closed     # 查看已平仓记录
+uv run python view_trades.py --type stats      # 查看交易统计
+uv run python view_trades.py --days 7 --limit 20  # 查看最近7天的20条记录
 ```
 
 ## 📖 架构详解
@@ -220,12 +229,16 @@ workflow.add_edge("decide", "execute")
 workflow.add_edge("execute", "reflect")
 workflow.add_edge("reflect", "update_memory")
 workflow.add_edge("update_memory", END)
+
+# 使用 SqliteSaver 作为 Checkpointer（持久化状态）
+checkpointer = SqliteSaver.from_conn_string(db_path)
+graph = workflow.compile(checkpointer=checkpointer)
 ```
 
 **特点**：
-- LangGraph 状态管理
-- 持久化 checkpoints
-- 自动记忆检索
+- **SqliteSaver Checkpointer**: 持久化图状态，支持断点恢复
+- **MemoryManager**: SQLite 记忆存储，相似度匹配历史案例
+- **统一数据库**: 所有组件共享 `data/nofn.db`
 - LLM 反思总结
 - 经验提取和存储
 
@@ -289,10 +302,21 @@ workflow.add_edge("update_memory", END)
 }
 ```
 
+**数据库存储（Phase 1 架构）**：
+- 使用 SQLite 统一数据库（`data/nofn.db`）
+- 表结构：
+  - `trades`: 交易记录（TradeHistoryManager）
+  - `positions`: 持仓记录（TradeHistoryManager）
+  - `trading_cases`: 交易案例（MemoryManager）
+  - `memory_summaries`: 记忆摘要（MemoryManager）
+  - `checkpoints`: LangGraph 状态快照（SqliteSaver）
+- 线程安全的连接管理
+- SQL 索引优化查询性能
+
 **检索与压缩**：
 - 基于市场条件的相似度匹配
-- 智能清理：保留近期 + 有交易的旧案例
-- 自动归档：按月分组历史数据
+- 智能清理：保留最近 1000 个案例（30天内）
+- 自动生成周度/月度摘要
 - 压缩效率：99.7%（982MB → 3MB/年）
 
 ## 📁 项目结构
@@ -322,12 +346,12 @@ nofn/
 │       ├── indicators.py             # 技术指标计算 ⭐
 │       └── config.py                 # 配置管理
 └── data/
-    └── memory/
-        ├── cases.json                # 交易案例存储（短期）
-        ├── summaries.json            # 记忆摘要（中期）
-        └── archives/                 # 历史归档（长期）
-            ├── cases_202511.json     # 2025年11月案例
-            └── cases_202512.json     # 2025年12月案例
+    └── nofn.db                       # 统一 SQLite 数据库 ⭐
+        ├── trades                    # 交易记录表 (TradeHistoryManager)
+        ├── positions                 # 持仓记录表 (TradeHistoryManager)
+        ├── trading_cases             # 交易案例表 (MemoryManager)
+        ├── memory_summaries          # 记忆摘要表 (MemoryManager)
+        └── checkpoints               # LangGraph 状态快照 (SqliteSaver)
 ```
 
 ## 🔄 系统工作流

@@ -192,14 +192,14 @@ async def get_market_price(symbol: str) -> Dict:
 @tool
 async def get_candles_data(
     symbol: str,
-    timeframe: str = "15m",
+    timeframe: str = "5m",
     limit: int = 100
 ) -> Dict:
     """获取K线数据
 
     Args:
         symbol: 交易对，如 "BTC/USDC:USDC"
-        timeframe: 时间周期，可选: "1m", "15m", "1h", "4h"
+        timeframe: 时间周期，可选: "1m", "5m", "15m", "1h", "4h"
         limit: 返回数量，默认100根K线
 
     Returns:
@@ -210,7 +210,7 @@ async def get_candles_data(
             - count: K线数量
 
     示例:
-        result = await get_candles_data("BTC/USDC:USDC", "15m", 100)
+        result = await get_candles_data("BTC/USDC:USDC", "5m", 100)
         # {"candles": [{timestamp, open, high, low, close, volume}, ...]}
 
     注意:

@@ -382,6 +382,24 @@ class BaseExchangeAdapter(ABC):
         pass
 
     @abstractmethod
+    async def get_open_interest(
+        self,
+        symbol: str,
+        **params
+    ) -> Optional[Decimal]:
+        """
+        获取持仓量（未平仓合约）
+
+        Args:
+            symbol: 交易对
+            **params: 其他参数
+
+        Returns:
+            Optional[Decimal]: 持仓量（以USD计价），如果无法获取则返回None
+        """
+        pass
+
+    @abstractmethod
     async def get_latest_price(
         self,
         symbol: str,

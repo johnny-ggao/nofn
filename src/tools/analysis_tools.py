@@ -43,7 +43,7 @@ def get_market_analyzer():
 
 async def _calculate_indicators_internal(
     symbol: str,
-    timeframe: str = "15m"
+    timeframe: str = "5m"
 ) -> Dict:
     """内部函数：计算技术指标（供工具和其他函数调用）"""
     adapter = get_adapter()
@@ -55,11 +55,12 @@ async def _calculate_indicators_internal(
     # 转换时间周期
     tf_map = {
         "1m": TimeFrame.M1,
+        "5m": TimeFrame.M5,
         "15m": TimeFrame.M15,
         "1h": TimeFrame.H1,
         "4h": TimeFrame.H4,
     }
-    tf = tf_map.get(timeframe, TimeFrame.M15)
+    tf = tf_map.get(timeframe, TimeFrame.M5)
 
     # 计算指标
     indicators_map = await analyzer.calculate_indicators(
@@ -105,13 +106,13 @@ async def _calculate_indicators_internal(
 @tool
 async def calculate_technical_indicators(
     symbol: str,
-    timeframe: str = "15m"
+    timeframe: str = "5m"
 ) -> Dict:
     """计算技术指标
 
     Args:
         symbol: 交易对，如 "BTC/USDC:USDC"
-        timeframe: 时间周期，可选: "1m", "15m", "1h", "4h"
+        timeframe: 时间周期，可选: "1m", "5m", "15m", "1h", "4h"
 
     Returns:
         Dict: 技术指标
@@ -151,7 +152,7 @@ async def calculate_technical_indicators(
 @tool
 async def analyze_market_trend(
     symbol: str,
-    timeframe: str = "15m"
+    timeframe: str = "5m"
 ) -> Dict:
     """分析市场趋势（客观指标分析）
 
@@ -172,7 +173,7 @@ async def analyze_market_trend(
             - macd_histogram: MACD柱状图当前值
 
     示例:
-        result = await analyze_market_trend("BTC/USDC:USDC", "15m")
+        result = await analyze_market_trend("BTC/USDC:USDC", "5m")
         # {"ema_20": 65000, "ema_50": 64500, "ema_20_above_50": true, "rsi_14": 45, ...}
 
     用途:

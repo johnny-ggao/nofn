@@ -61,7 +61,7 @@ class DecisionMaker:
 
         # 加载系统提示词
         from pathlib import Path
-        prompt_path = Path(__file__).parent.parent / "prompts" / "hansen.txt"
+        prompt_path = Path(__file__).parent.parent / "prompts" / "nofn_v2.txt"
         self.system_prompt = prompt_path.read_text(encoding="utf-8")
 
     async def analyze_and_decide(

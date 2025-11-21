@@ -38,7 +38,7 @@ class TradingAgent:
         self.tools = ALL_TOOLS
 
         # 加载 Hansen 提示词
-        prompt_path = Path(__file__).parent.parent.parent / "prompts" / "hansen.txt"
+        prompt_path = Path(__file__).parent.parent.parent / "prompts" / "hansen1.txt"
         try:
             system_prompt = prompt_path.read_text(encoding="utf-8")
         except Exception as e:
@@ -62,7 +62,7 @@ class TradingAgent:
         """
         让 Agent 分析市场并做出决策
 
-        注意：system_prompt (hansen.txt) 已包含完整策略，这里只需简单触发
+        注意：system_prompt (hansen1.txt) 已包含完整策略，这里只需简单触发
 
         Args:
             custom_instruction: 自定义指令（可选）
