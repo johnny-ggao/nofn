@@ -42,8 +42,18 @@ class TradeHistoryManager:
     def _get_connection(self) -> sqlite3.Connection:
         """获取线程本地的数据库连接"""
         if not hasattr(self._local, 'conn'):
-            self._local.conn = sqlite3.connect(str(self.db_path))
+            # 增加 timeout 到 30 秒以处理并发访问
+            self._local.conn = sqlite3.connect(
+                str(self.db_path),
+                timeout=30.0,
+                check_same_thread=False
+            )
             self._local.conn.row_factory = sqlite3.Row
+
+            # 启用 WAL 模式以支持并发读写
+            self._local.conn.execute('PRAGMA journal_mode=WAL')
+            self._local.conn.execute('PRAGMA busy_timeout=30000')  # 30秒
+
         return self._local.conn
 
     def _init_database(self):

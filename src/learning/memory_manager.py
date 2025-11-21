@@ -10,6 +10,7 @@
 """
 import sqlite3
 import json
+import time
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -146,8 +147,18 @@ class MemoryManager:
     def _get_connection(self) -> sqlite3.Connection:
         """获取线程本地的数据库连接"""
         if not hasattr(self._local, 'conn'):
-            self._local.conn = sqlite3.connect(str(self.db_path))
+            # 增加 timeout 到 30 秒以处理并发访问
+            self._local.conn = sqlite3.connect(
+                str(self.db_path),
+                timeout=30.0,
+                check_same_thread=False
+            )
             self._local.conn.row_factory = sqlite3.Row
+
+            # 启用 WAL 模式以支持并发读写
+            self._local.conn.execute('PRAGMA journal_mode=WAL')
+            self._local.conn.execute('PRAGMA busy_timeout=30000')  # 30秒
+
         return self._local.conn
 
     def _init_database(self):
@@ -218,30 +229,48 @@ class MemoryManager:
         }
 
     def add_case(self, case: TradingCase):
-        """添加交易案例"""
-        conn = self._get_connection()
-        cursor = conn.cursor()
+        """添加交易案例（带重试机制）"""
+        max_retries = 3
+        retry_delay = 0.1  # 100ms
 
-        cursor.execute('''
-            INSERT INTO trading_cases
-            (case_id, timestamp, market_conditions, decision, execution_result,
-             realized_pnl, reflection, lessons_learned)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            case.case_id,
-            case.timestamp.isoformat(),
-            json.dumps(case.market_conditions, ensure_ascii=False),
-            case.decision,
-            json.dumps(case.execution_result, ensure_ascii=False) if case.execution_result else None,
-            float(case.realized_pnl) if case.realized_pnl is not None else None,
-            case.reflection,
-            json.dumps(case.lessons_learned, ensure_ascii=False) if case.lessons_learned else None,
-        ))
+        for attempt in range(max_retries):
+            try:
+                conn = self._get_connection()
+                cursor = conn.cursor()
 
-        conn.commit()
+                cursor.execute('''
+                    INSERT INTO trading_cases
+                    (case_id, timestamp, market_conditions, decision, execution_result,
+                     realized_pnl, reflection, lessons_learned)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    case.case_id,
+                    case.timestamp.isoformat(),
+                    json.dumps(case.market_conditions, ensure_ascii=False),
+                    case.decision,
+                    json.dumps(case.execution_result, ensure_ascii=False) if case.execution_result else None,
+                    float(case.realized_pnl) if case.realized_pnl is not None else None,
+                    case.reflection,
+                    json.dumps(case.lessons_learned, ensure_ascii=False) if case.lessons_learned else None,
+                ))
 
-        # 自动清理旧案例（保留最近1000个）
-        self._cleanup_old_cases(max_cases=1000, keep_days=30)
+                conn.commit()
+
+                # 自动清理旧案例（保留最近1000个）
+                self._cleanup_old_cases(max_cases=1000, keep_days=30)
+
+                # 成功，退出重试循环
+                break
+
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e) and attempt < max_retries - 1:
+                    # 数据库锁定，等待后重试
+                    print(f"⚠️  数据库锁定，{retry_delay}秒后重试 ({attempt + 1}/{max_retries})...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数退避
+                else:
+                    # 最后一次重试失败或其他错误，抛出异常
+                    raise
 
     def _cleanup_old_cases(self, max_cases: int = 1000, keep_days: int = 30):
         """

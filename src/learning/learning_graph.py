@@ -441,8 +441,14 @@ class LearningGraph:
         if self.graph is None:
             import aiosqlite
 
-            # 创建异步 SQLite 连接
-            conn = await aiosqlite.connect(self.db_path)
+            # 创建异步 SQLite 连接（增加 timeout）
+            conn = await aiosqlite.connect(self.db_path, timeout=30.0)
+
+            # 启用 WAL 模式以支持并发读写
+            await conn.execute('PRAGMA journal_mode=WAL')
+            await conn.execute('PRAGMA busy_timeout=30000')  # 30秒
+            await conn.commit()
+
             self._checkpointer = AsyncSqliteSaver(conn)
 
             # 编译 graph
