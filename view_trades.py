@@ -170,7 +170,7 @@ def main():
     args = parser.parse_args()
 
     # 初始化管理器（使用统一数据库）
-    manager = TradeHistoryManager(db_path="data/nofn.db")
+    manager = TradeHistoryManager(db_path="data/trades.db")
 
     cprint("\n" + "=" * 60, "cyan")
     cprint("📊 交易历史查询工具", "cyan", attrs=['bold'])

@@ -51,9 +51,8 @@ async def run_new_architecture():
         )
         await adapter.initialize()
 
-        # 初始化交易历史管理器（使用统一数据库）
-        db_path = "data/nofn.db"
-        trade_history = TradeHistoryManager(db_path=db_path)
+        # 初始化交易历史管理器（使用独立的 trades 数据库）
+        trade_history = TradeHistoryManager()  # 默认: data/trades.db
 
         engine = TradingEngine(adapter=adapter, trade_history=trade_history)
         cprint("✅ Layer 1 (执行层) 初始化完成", "green")
@@ -72,15 +71,15 @@ async def run_new_architecture():
         decision_maker = DecisionMaker(llm=llm)
         cprint("✅ Layer 2 (决策层) 初始化完成", "green")
 
-        # Layer 3: 学习层（使用 SqliteSaver Checkpointer + MemoryManager）
+        # Layer 3: 学习层（使用独立数据库避免锁冲突）
         from src.learning import LearningGraph, MemoryManager
 
-        memory_manager = MemoryManager(db_path=db_path, llm=llm)
+        memory_manager = MemoryManager(llm=llm)  # 默认: data/memory.db
         learning_graph = LearningGraph(
             engine=engine,
             decision_maker=decision_maker,
-            memory_manager=memory_manager,
-            db_path=db_path  # 用于 SqliteSaver (checkpointer)
+            memory_manager=memory_manager
+            # checkpoint_db 使用默认值 data/checkpoint.db
         )
         cprint("✅ Layer 3 (学习层) 初始化完成", "green")
 

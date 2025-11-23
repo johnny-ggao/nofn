@@ -1,13 +1,6 @@
 """
 Hyperliquid 交易所适配器
-
-实现 Hyperliquid 交易所的具体功能
-
-注意：
-- 使用 Hyperliquid SDK 进行订单操作（市价单、限价单、止盈止损单）
-- 使用 CCXT 进行查询操作（持仓、余额、K线等）
 """
-import json
 from typing import List, Optional, Dict, Any
 from decimal import Decimal
 import decimal
@@ -49,6 +42,7 @@ class HyperliquidAdapter(BaseExchangeAdapter):
     def __init__(self, api_key: str, api_secret: str, **kwargs):
         super().__init__(api_key, api_secret, **kwargs)
         self._hl_exchange = None
+        self._hl_info = None  # Hyperliquid Info API
 
     @staticmethod
     def _safe_decimal(value, default="0") -> Decimal:
@@ -86,24 +80,6 @@ class HyperliquidAdapter(BaseExchangeAdapter):
             return Decimal(str(value))
         except (ValueError, TypeError, decimal.InvalidOperation):
             return None
-
-    @staticmethod
-    def _symbol_to_coin(symbol: str) -> str:
-        """
-        将 CCXT 格式的交易对转换为 Hyperliquid SDK 的币种格式
-
-        Args:
-            symbol: CCXT 交易对格式（如 "BTC/USDC:USDC" 或 "ETH/USDC:USDC"）
-
-        Returns:
-            str: Hyperliquid 币种格式（如 "BTC" 或 "ETH"）
-        """
-        # Hyperliquid SDK 使用币种名称而不是交易对
-        # 例如: "BTC/USDC:USDC" -> "BTC", "ETH/USDC:USDC" -> "ETH"
-        # 处理两种格式: "BTC/USDC:USDC" 和 "BTC/USDC"
-        if '/' in symbol:
-            return symbol.split('/')[0]
-        return symbol
 
     async def initialize(self) -> None:
         """
@@ -144,6 +120,9 @@ class HyperliquidAdapter(BaseExchangeAdapter):
                 account_address=self.api_key   # 钱包地址
             )
 
+            # 3. 初始化 Hyperliquid Info API（用于查询市场数据）
+            self._hl_info = Info(base_url=base_url, skip_ws=True)
+
         except Exception as e:
             raise ConnectionError(f"Hyperliquid 初始化失败: {str(e)}")
 
@@ -182,14 +161,10 @@ class HyperliquidAdapter(BaseExchangeAdapter):
             ExecutionResult: 执行结果
         """
         try:
-            # 设置杠杆
-            if leverage > 1:
-                await self.set_leverage(symbol, leverage)
+            await self.set_leverage(symbol, leverage)
 
-            # 转换交易对格式
             coin = self._symbol_to_coin(symbol)
 
-            # 确定订单方向
             is_buy = side == PositionSide.LONG
 
             # 下单
@@ -199,7 +174,7 @@ class HyperliquidAdapter(BaseExchangeAdapter):
                     coin,
                     is_buy,
                     float(amount),
-                    None,  # px 参数，市价单为 None
+                    None,
                     slippage
                 )
 
@@ -218,12 +193,10 @@ class HyperliquidAdapter(BaseExchangeAdapter):
             else:
                 raise ValueError(f"不支持的订单类型: {order_type}")
 
-            # 检查结果
             if result.get('status') != 'ok':
                 error_msg = result.get('response', {}).get('data', {}).get('statuses', [{}])[0].get('error', 'Unknown error')
                 raise Exception(error_msg)
 
-            # 解析订单结果
             statuses = result.get('response', {}).get('data', {}).get('statuses', [])
             if not statuses:
                 raise Exception("未获取到订单状态")
@@ -320,74 +293,65 @@ class HyperliquidAdapter(BaseExchangeAdapter):
             ExecutionResult: 执行结果
         """
         try:
-            # 转换交易对格式
             coin = self._symbol_to_coin(symbol)
 
-            # 如果指定了平仓数量（部分平仓）
-            if amount:
-                # 获取当前持仓以确定方向
-                position = await self.get_position(symbol)
-                if not position:
-                    return ExecutionResult(
-                        status=ExecutionStatus.FAILED,
-                        action=TradingAction.CLOSE_POSITION,
-                        symbol=symbol,
-                        message="未找到持仓",
-                        error="No position found",
-                        timestamp=datetime.now(),
-                    )
-
-                # 反向下单来平仓（使用 reduce_only）
-                is_buy = position.side == PositionSide.SHORT  # 平多单需要卖，平空单需要买
-                slippage = params.get('slippage', 0.01)
-
-                # 使用 market_open 方法，但带 reduce_only 参数
-                result = self._hl_exchange.order(
-                    coin,
-                    is_buy,
-                    float(amount),
-                    None,  # 市价单价格为 None
-                    {"market": {}},
-                    reduce_only=True
+            # 获取当前持仓以确定方向和数量
+            position = await self.get_position(symbol)
+            if not position:
+                return ExecutionResult(
+                    status=ExecutionStatus.FAILED,
+                    action=TradingAction.CLOSE_POSITION,
+                    symbol=symbol,
+                    message="未找到持仓",
+                    error="No position found",
+                    timestamp=datetime.now(),
                 )
-            else:
-                # 全部平仓 - 使用 SDK 的 market_close 方法
-                # market_close(coin, px=None, slippage=0.05)
-                slippage = params.get('slippage', 0.05)
-                result = self._hl_exchange.market_close(coin, None, slippage)
 
-            # 检查结果
-            if result.get('status') != 'ok':
-                error_msg = result.get('response', {}).get('data', {}).get('statuses', [{}])[0].get('error', 'Unknown error')
-                raise Exception(error_msg)
+            # 确定平仓数量（如果未指定则全部平仓）
+            close_amount = float(amount) if amount else float(position.amount)
 
-            # 解析订单结果
-            statuses = result.get('response', {}).get('data', {}).get('statuses', [])
-            if not statuses:
-                raise Exception("未获取到订单状态")
+            # 确定平仓方向（反向）
+            side = 'sell' if position.side == PositionSide.LONG else 'buy'
 
-            status_data = statuses[0]
+            ticker = await self._exchange.fetch_ticker(symbol)
+            current_price = float(ticker.get('last', 0))
 
-            # 获取订单 ID 和成交信息
-            order_id = None
-            executed_amount = Decimal("0")
-            executed_price = None
+            # 使用 CCXT 创建市价平仓单
+            result = await self._exchange.create_order(
+                symbol=symbol,
+                type='market',
+                side=side,
+                amount=close_amount,
+                price=current_price,
+                params={
+                    'reduceOnly': True,
+                    'user': self._exchange.walletAddress
+                }
+            )
 
-            if 'filled' in status_data:
-                # 订单已成交
-                filled_data = status_data['filled']
-                order_id = str(filled_data.get('oid', ''))
-                executed_amount = Decimal(str(filled_data.get('totalSz', 0)))
-                executed_price = Decimal(str(filled_data.get('avgPx', 0)))
+            # 解析 CCXT 订单结果
+            order_id = str(result.get('id', ''))
+
+            # 安全地解析数量和价格
+            filled = result.get('filled', 0)
+            executed_amount = self._safe_decimal(filled, "0")
+
+            average = result.get('average')
+            executed_price = self._safe_decimal(average, "0") if average else None
+
+            # 安全地解析手续费
+            fee = Decimal("0")
+            if result.get('fee') and result['fee'].get('cost'):
+                fee = self._safe_decimal(result['fee']['cost'], "0")
 
             return ExecutionResult(
                 status=ExecutionStatus.SUCCESS,
                 action=TradingAction.CLOSE_POSITION,
-                order_id=order_id or '',
+                order_id=order_id,
                 symbol=symbol,
                 executed_amount=executed_amount,
                 executed_price=executed_price,
-                fee=Decimal("0"),  # SDK 返回中没有直接的手续费字段
+                fee=fee,
                 message="成功平仓",
                 raw_response=result,
                 timestamp=datetime.now(),
@@ -1077,39 +1041,78 @@ class HyperliquidAdapter(BaseExchangeAdapter):
         symbol: str,
         **params
     ) -> Optional[Decimal]:
-        """获取持仓量"""
+        """获取持仓量 - 使用 Hyperliquid Info API"""
         try:
-            # CCXT 的持仓量接口
-            # 注意：不是所有交易所都支持这个接口
-            oi_data = await self._exchange.fetch_open_interest(symbol, params)
+            # 转换交易对格式为币种名称 (BTC/USDC:USDC -> BTC)
+            coin = self._symbol_to_coin(symbol)
 
-            # fetch_open_interest 返回的数据结构：
-            # {
-            #     'symbol': 'BTC/USDC:USDC',
-            #     'openInterestAmount': 1234.56,  # 合约数量
-            #     'openInterestValue': 123456.78, # USD 价值
-            #     'timestamp': 1234567890,
-            #     ...
-            # }
+            # 使用 Hyperliquid Info API 获取元数据和资产上下文
+            # meta_and_asset_ctxs() 返回: [meta_dict, asset_contexts_list]
+            data = self._hl_info.meta_and_asset_ctxs()
 
-            # 优先使用 USD 价值，如果没有则使用合约数量
-            if oi_data.get('openInterestValue') is not None:
-                return Decimal(str(oi_data['openInterestValue']))
-            elif oi_data.get('openInterestAmount') is not None:
-                # 如果只有合约数量，尝试乘以当前价格估算 USD 价值
-                amount = Decimal(str(oi_data['openInterestAmount']))
-                # 尝试从数据中获取价格
-                if oi_data.get('price'):
-                    return amount * Decimal(str(oi_data['price']))
-                else:
-                    # 无法计算 USD 价值，返回 None
-                    return None
-            else:
+            # data 结构：
+            # [
+            #     {  # data[0] - 元数据字典
+            #         "universe": [  # 资产列表
+            #             {"name": "BTC", "szDecimals": 5, "maxLeverage": 40, ...},
+            #             {"name": "ETH", "szDecimals": 4, "maxLeverage": 25, ...},
+            #             ...
+            #         ],
+            #         "marginTables": [...],
+            #         "collateralToken": "..."
+            #     },
+            #     [  # data[1] - 资产市场数据列表（索引与 universe 对应）
+            #         {
+            #             "funding": "0.0001",
+            #             "openInterest": "25869.22508",  # 持仓量
+            #             "prevDayPx": "84027.0",
+            #             "dayNtlVlm": "7287881321.52",
+            #             "premium": "-0.0003552314",
+            #             "oraclePx": "84452.0",
+            #             "markPx": "84413.0"
+            #         },
+            #         ...  # 221个资产的市场数据
+            #     ]
+            # ]
+
+            if not isinstance(data, list) or len(data) < 2:
                 return None
 
+            meta_dict = data[0]  # 元数据字典
+            asset_ctxs = data[1]  # 市场数据列表
+
+            # 获取 universe（资产列表）
+            if not isinstance(meta_dict, dict) or 'universe' not in meta_dict:
+                return None
+
+            universe = meta_dict['universe']
+
+            # 查找币种在 universe 中的索引
+            coin_index = None
+            for i, asset_info in enumerate(universe):
+                if asset_info.get('name') == coin:
+                    coin_index = i
+                    break
+
+            # 如果找不到币种或索引越界，返回 None
+            if coin_index is None or coin_index >= len(asset_ctxs):
+                return None
+
+            # 获取对应索引的市场数据
+            ctx = asset_ctxs[coin_index]
+            open_interest = ctx.get('openInterest')
+
+            if open_interest is not None:
+                return Decimal(str(open_interest))
+
+            return None
+
         except Exception as e:
-            # 如果交易所不支持或获取失败，静默返回 None
+            # 如果获取失败，记录错误并返回 None
             # 持仓量不是关键指标，不应该因为获取失败而中断流程
+            import traceback
+            cprint(f"⚠️  获取持仓量失败 ({symbol}): {str(e)}", "yellow")
+            cprint(f"   详细: {traceback.format_exc()}", "yellow")
             return None
 
     async def get_latest_price(
@@ -1324,3 +1327,71 @@ class HyperliquidAdapter(BaseExchangeAdapter):
 
         except Exception as e:
             raise Exception(f"获取 K 线数据失败 ({symbol}, {timeframe}): {str(e)}")
+
+    async def get_funding_rate_history(
+        self,
+        symbol: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        获取资金费率历史数据
+
+        Args:
+            symbol: 交易对 (如 "BTC/USDC:USDC")
+            start_time: 开始时间戳（毫秒），默认为24小时前
+            end_time: 结束时间戳（毫秒），默认为当前时间
+
+        Returns:
+            List[Dict]: 资金费率历史数据列表，每个元素包含：
+                - time: 时间戳（毫秒）
+                - funding_rate: 资金费率
+                - premium: 溢价（如果有）
+        """
+        try:
+            coin = self._symbol_to_coin(symbol)
+
+            # 默认获取最近24小时的数据
+            if end_time is None:
+                end_time = int(datetime.now().timestamp() * 1000)
+            if start_time is None:
+                start_time = end_time - (24 * 60 * 60 * 1000)  # 24小时前
+
+            # 使用 Hyperliquid Info API 获取资金费率历史
+            result = self._hl_info.funding_history(coin, startTime=start_time, endTime=end_time)
+
+            if not result:
+                return []
+
+            # 转换格式
+            funding_history = []
+            for item in result:
+                funding_history.append({
+                    'time': item.get('time'),
+                    'funding_rate': float(item.get('fundingRate', 0)),
+                    'premium': float(item.get('premium', 0)) if 'premium' in item else None
+                })
+
+            return funding_history
+
+        except Exception as e:
+            cprint(f"⚠️  获取资金费率历史失败: {e}", "yellow")
+            return []
+
+    @staticmethod
+    def _symbol_to_coin(symbol: str) -> str:
+        """
+        将 CCXT 格式的交易对转换为 Hyperliquid SDK 的币种格式
+
+        Args:
+            symbol: CCXT 交易对格式（如 "BTC/USDC:USDC" 或 "ETH/USDC:USDC"）
+
+        Returns:
+            str: Hyperliquid 币种格式（如 "BTC" 或 "ETH"）
+        """
+        # Hyperliquid SDK 使用币种名称而不是交易对
+        # 例如: "BTC/USDC:USDC" -> "BTC", "ETH/USDC:USDC" -> "ETH"
+        # 处理两种格式: "BTC/USDC:USDC" 和 "BTC/USDC"
+        if '/' in symbol:
+            return symbol.split('/')[0]
+        return symbol

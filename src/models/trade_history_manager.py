@@ -26,7 +26,7 @@ class TradeHistoryManager:
     5. 提供查询和统计功能
     """
 
-    def __init__(self, db_path: str = "data/nofn.db"):
+    def __init__(self, db_path: str = "data/trades.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 

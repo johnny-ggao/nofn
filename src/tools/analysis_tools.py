@@ -80,26 +80,50 @@ async def _calculate_indicators_internal(
                 return float(value[0])
             return None
         # 如果是单值，直接转换
-        return float(value)
+        try:
+            return float(value)
+        except:
+            return None
+
+    def safe_float_array(arr, max_len=10):
+        """安全提取数组"""
+        if arr is None:
+            return None
+        if isinstance(arr, list):
+            result = []
+            for val in arr[:max_len]:
+                if val is not None:
+                    try:
+                        result.append(float(val))
+                    except:
+                        result.append(None)
+                else:
+                    result.append(None)
+            return result if result else None
+        return None
 
     return {
         "success": True,
         "symbol": symbol,
         "timeframe": timeframe,
-        # 列表类型指标，取第一个元素（最新值）
-        "ema_20": safe_float(indicators.get("ema_20")),
-        "ema_50": safe_float(indicators.get("ema_50")),
-        "rsi_14": safe_float(indicators.get("rsi_14")),  # 使用 RSI-14
-        "macd_line": safe_float(indicators.get("macd_line")),
-        "macd_signal": safe_float(indicators.get("macd_signal")),
-        "macd_histogram": safe_float(indicators.get("macd_histogram")),
-        # 单值类型指标
+        # 趋势指标（数组：最近10个点）
+        "ema_20": safe_float_array(indicators.get("ema_20")),
+        "ema_50": safe_float_array(indicators.get("ema_50")),
+        "ema_200": safe_float_array(indicators.get("ema_200")),
+        # 动量指标（数组：最近10个点）
+        "rsi_7": safe_float_array(indicators.get("rsi_7")),
+        "rsi_14": safe_float_array(indicators.get("rsi_14")),
+        "macd_line": safe_float_array(indicators.get("macd_line")),
+        "macd_signal": safe_float_array(indicators.get("macd_signal")),
+        "macd_histogram": safe_float_array(indicators.get("macd_histogram")),
+        # 波动率指标（单值）
         "atr": safe_float(indicators.get("atr")),
         "atr_percent": safe_float(indicators.get("atr_percent")),
+        # 成交量指标（单值）
         "volume_24h": safe_float(indicators.get("volume_24h")),
-        "obv": safe_float(indicators.get("obv")),
-        "stoch_k": safe_float(indicators.get("stoch_k")),
-        "stoch_d": safe_float(indicators.get("stoch_d")),
+        # 市场情绪指标（单值）
+        "funding_rate": safe_float(indicators.get("funding_rate")),
+        "open_interest": safe_float(indicators.get("open_interest")),
     }
 
 
@@ -116,27 +140,37 @@ async def calculate_technical_indicators(
 
     Returns:
         Dict: 技术指标
-            - ema_20: 20周期指数移动平均线（最新值）
-            - ema_50: 50周期指数移动平均线（最新值）
+            数组类型（最近10个点，新到旧）：
+            - ema_20: 20周期指数移动平均线
+            - ema_50: 50周期指数移动平均线
+            - ema_200: 200周期指数移动平均线
+            - rsi_7: 7周期相对强弱指标 (0-100)
             - rsi_14: 14周期相对强弱指标 (0-100)
-            - macd_line: MACD线（最新值）
-            - macd_signal: MACD信号线（最新值）
-            - macd_histogram: MACD柱状图（最新值）
+            - macd_line: MACD线
+            - macd_signal: MACD信号线
+            - macd_histogram: MACD柱状图
+
+            单值类型：
             - atr: 平均真实波幅
             - atr_percent: ATR百分比
             - volume_24h: 24小时成交量
-            - obv: 能量潮指标
-            - stoch_k: 随机指标K值
-            - stoch_d: 随机指标D值
+            - funding_rate: 资金费率（永续合约）
+            - open_interest: 持仓量（永续合约）
 
     示例:
         result = await calculate_technical_indicators("BTC/USDC:USDC", "15m")
-        # {"rsi_14": 45.3, "ema_20": 65000, "macd_line": 120, ...}
+        # {
+        #   "rsi_14": [45.3, 46.2, 44.8, ...],  # 最近10个点
+        #   "ema_20": [65000, 64980, 64950, ...],
+        #   "atr": 450.5,  # 单值
+        #   "funding_rate": 0.0001
+        # }
 
     用途:
         - 判断超买超卖（RSI > 70 超买，< 30 超卖）
         - 判断趋势方向（EMA 多空排列）
         - 判断动量（MACD 金叉死叉）
+        - 观察趋势变化（通过数组查看历史）
     """
     try:
         return await _calculate_indicators_internal(symbol, timeframe)

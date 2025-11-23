@@ -62,12 +62,12 @@ class LearningGraph:
         engine: TradingEngine,
         decision_maker: DecisionMaker,
         memory_manager: MemoryManager,
-        db_path: str = "data/nofn.db"
+        checkpoint_db: str = "data/checkpoint.db"
     ):
         self.engine = engine
         self.decision_maker = decision_maker
         self.memory = memory_manager
-        self.db_path = db_path
+        self.checkpoint_db = checkpoint_db
 
         # Graph 延迟初始化（需要异步创建 checkpointer）
         self.graph = None
@@ -291,8 +291,11 @@ class LearningGraph:
         cprint("🤔 反思本次决策...", "magenta")
         cprint("=" * 70, "magenta")
 
-        # 构建反思提示
-        reflection_prompt = self._build_reflection_prompt(state)
+        # 获取账户信息
+        account_info = await self._get_account_info()
+
+        # 构建反思提示（包含账户信息）
+        reflection_prompt = self._build_reflection_prompt(state, account_info)
 
         # LLM反思
         llm = self.decision_maker.llm
@@ -317,6 +320,42 @@ class LearningGraph:
             'reflection': reflection_text,
             'lessons_learned': lessons
         }
+
+    async def _get_account_info(self) -> dict:
+        """获取账户信息（用于反思和总结）"""
+        try:
+            # 1. 获取账户余额
+            balance = await self.engine.adapter.get_balance()
+
+            # 2. 获取交易统计数据
+            stats = self.engine.trade_history.get_statistics()
+
+            # 3. 获取当前持仓（从 adapter 获取实时持仓，包含 unrealized_pnl）
+            open_positions = await self.engine.adapter.get_positions()
+
+            # 4. 格式化持仓数据（包含未实现盈亏）
+            positions_data = []
+            for pos in open_positions:
+                positions_data.append({
+                    'symbol': pos.symbol,
+                    'side': pos.side.value if hasattr(pos.side, 'value') else str(pos.side),
+                    'unrealized_pnl': float(pos.unrealized_pnl) if pos.unrealized_pnl else 0,
+                    'entry_price': float(pos.entry_price),
+                    'amount': float(pos.amount)
+                })
+
+            return {
+                'balance': {
+                    'total': float(balance.total),
+                    'available': float(balance.available),
+                    'frozen': float(balance.frozen)
+                },
+                'statistics': stats,
+                'open_positions': positions_data
+            }
+        except Exception as e:
+            cprint(f"⚠️  获取账户信息失败: {e}", "yellow")
+            return None
 
     async def _update_memory(self, state: TradingState) -> Dict[str, Any]:
         """更新记忆库（Layer 3）"""
@@ -369,21 +408,52 @@ class LearningGraph:
             timestamp=state.get('timestamp', datetime.now())
         )
 
-        # 添加到记忆
-        self.memory.add_case(case)
+        # 添加到记忆（后台异步执行，避免阻塞）
+        asyncio.create_task(self._save_case_background(case))
 
-        cprint(f"✅ 案例已保存: {case.case_id}", "green")
-
-        # 🆕 检查是否需要生成摘要（异步，不阻塞主流程）
-        asyncio.create_task(self._check_and_generate_summary())
+        cprint(f"✅ 案例已提交保存（后台执行）: {case.case_id}", "green")
 
         return {}
 
     @staticmethod
-    def _build_reflection_prompt(state: TradingState) -> str:
+    def _build_reflection_prompt(state: TradingState, account_info: dict = None) -> str:
         """构建反思提示"""
         lines = [
             "请反思以下交易过程：",
+            "",
+            "## 账户状态"
+        ]
+
+        # 添加账户信息
+        if account_info:
+            balance = account_info.get('balance', {})
+            stats = account_info.get('statistics', {})
+            positions = account_info.get('open_positions', [])
+
+            lines.append(f"- 账户余额: ${balance.get('total', 0):.2f}")
+            lines.append(f"- 可用资金: ${balance.get('available', 0):.2f}")
+            lines.append(f"- 冻结保证金: ${balance.get('frozen', 0):.2f}")
+
+            if stats:
+                lines.append(f"- 累计平仓次数: {stats.get('total_positions', 0)} 次")
+                lines.append(f"  - 盈利次数: {stats.get('win_count', 0)} 次")
+                lines.append(f"  - 亏损次数: {stats.get('loss_count', 0)} 次")
+                lines.append(f"  - 胜率: {stats.get('win_rate', 0) * 100:.1f}%")
+                lines.append(f"- 已实现总盈亏: ${stats.get('total_pnl', 0):.2f}")
+                lines.append(f"  - 最大盈利: ${stats.get('max_profit', 0):.2f}")
+                lines.append(f"  - 最大亏损: ${stats.get('max_loss', 0):.2f}")
+
+            if positions:
+                unrealized_total = sum(float(p.get('unrealized_pnl', 0)) for p in positions)
+                lines.append(f"- 当前持仓: {len(positions)} 个")
+                lines.append(f"- 未实现盈亏: ${unrealized_total:.2f}")
+                for pos in positions:
+                    side_name = "做多" if pos.get('side') == 'long' else "做空"
+                    lines.append(f"  - {pos.get('symbol')}: {side_name}, 盈亏 ${pos.get('unrealized_pnl', 0):.2f}")
+        else:
+            lines.append("（账户信息获取失败）")
+
+        lines.extend([
             "",
             "## 市场条件",
             state['market_snapshot'].to_text() if state.get('market_snapshot') else "N/A",
@@ -392,7 +462,7 @@ class LearningGraph:
             state['decision'].analysis if state.get('decision') else "N/A",
             "",
             "## 执行结果"
-        ]
+        ])
 
         for result in state.get('execution_results', []):
             signal = result['signal']
@@ -402,8 +472,8 @@ class LearningGraph:
 
         lines.append("")
         lines.append("## 请分析：")
-        lines.append("1. 这次决策合理吗？")
-        lines.append("2. 如果重来，会怎么做？")
+        lines.append("1. 结合账户状态，这次决策合理吗？")
+        lines.append("2. 当前盈亏情况如何影响下次决策？")
         lines.append("3. 学到了什么经验？（请用简短的一句话总结，每条经验单独一行）")
 
         return "\n".join(lines)
@@ -441,8 +511,8 @@ class LearningGraph:
         if self.graph is None:
             import aiosqlite
 
-            # 创建异步 SQLite 连接（增加 timeout）
-            conn = await aiosqlite.connect(self.db_path, timeout=30.0)
+            # 创建异步 SQLite 连接（独立的 checkpoint 数据库）
+            conn = await aiosqlite.connect(self.checkpoint_db, timeout=30.0)
 
             # 启用 WAL 模式以支持并发读写
             await conn.execute('PRAGMA journal_mode=WAL')
@@ -455,7 +525,7 @@ class LearningGraph:
             workflow = self._build_graph()
             self.graph = workflow.compile(checkpointer=self._checkpointer)
 
-            cprint(f"✅ Graph 和 Checkpointer (AsyncSqliteSaver) 初始化完成: {self.db_path}", "green")
+            cprint(f"✅ Graph 和 Checkpointer (AsyncSqliteSaver) 初始化完成: {self.checkpoint_db}", "green")
 
     async def run_iteration(self, symbols: List[str], iteration: int = 0):
         """运行一次迭代"""
@@ -478,6 +548,22 @@ class LearningGraph:
             import traceback
             traceback.print_exc()
             return None
+
+    async def _save_case_background(self, case: TradingCase):
+        """后台保存案例（避免阻塞主流程）"""
+        try:
+            # 在线程池中执行同步的 add_case
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self.memory.add_case, case)
+
+            cprint(f"✅ 案例保存成功: {case.case_id}", "green")
+
+            # 保存成功后，检查是否需要生成摘要
+            await self._check_and_generate_summary()
+
+        except Exception as e:
+            cprint(f"⚠️  案例保存失败: {e}", "red")
+            # 失败不影响主流程，只记录错误
 
     async def _check_and_generate_summary(self):
         """
@@ -530,7 +616,12 @@ class LearningGraph:
         """后台生成摘要（不阻塞主流程）"""
         try:
             cprint("🔄 开始生成摘要（后台任务）...", "cyan")
-            summary = await self.memory.generate_weekly_summary()
+
+            # 获取账户信息
+            account_info = await self._get_account_info()
+
+            # 生成摘要（包含账户信息）
+            summary = await self.memory.generate_weekly_summary(account_info)
 
             if summary:
                 cprint(f"✅ 摘要生成完成: {summary.summary_id}", "green")

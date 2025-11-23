@@ -11,6 +11,7 @@
 import sqlite3
 import json
 import time
+import random
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -130,7 +131,7 @@ class MemoryManager:
     5. 生成和存储记忆摘要
     """
 
-    def __init__(self, db_path: str = "data/nofn.db", llm=None):
+    def __init__(self, db_path: str = "data/memory.db", llm=None):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -229,9 +230,9 @@ class MemoryManager:
         }
 
     def add_case(self, case: TradingCase):
-        """添加交易案例（带重试机制）"""
-        max_retries = 3
-        retry_delay = 0.1  # 100ms
+        """添加交易案例（带强化重试机制）"""
+        max_retries = 10  # 增加到10次
+        base_delay = 0.5  # 基础等待500ms
 
         for attempt in range(max_retries):
             try:
@@ -260,16 +261,22 @@ class MemoryManager:
                 self._cleanup_old_cases(max_cases=1000, keep_days=30)
 
                 # 成功，退出重试循环
+                if attempt > 0:
+                    print(f"✅ 案例保存成功（重试 {attempt} 次后）")
                 break
 
             except sqlite3.OperationalError as e:
                 if "database is locked" in str(e) and attempt < max_retries - 1:
-                    # 数据库锁定，等待后重试
-                    print(f"⚠️  数据库锁定，{retry_delay}秒后重试 ({attempt + 1}/{max_retries})...")
+                    # 计算延迟：基础延迟 + 指数退避 + 随机抖动
+                    exponential_delay = base_delay * (1.5 ** attempt)
+                    jitter = random.uniform(0, 0.3)  # 随机抖动0-300ms
+                    retry_delay = exponential_delay + jitter
+
+                    print(f"⚠️  数据库锁定，{retry_delay:.2f}秒后重试 ({attempt + 1}/{max_retries})...")
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # 指数退避
                 else:
                     # 最后一次重试失败或其他错误，抛出异常
+                    print(f"❌ 案例保存失败: 重试 {max_retries} 次后仍然数据库锁定")
                     raise
 
     def _cleanup_old_cases(self, max_cases: int = 1000, keep_days: int = 30):
@@ -507,8 +514,8 @@ class MemoryManager:
 
         return [self._row_to_summary(row) for row in cursor.fetchall()]
 
-    async def generate_weekly_summary(self) -> Optional[MemorySummary]:
-        """生成每周摘要"""
+    async def generate_weekly_summary(self, account_info: dict = None) -> Optional[MemorySummary]:
+        """生成每周摘要（可包含账户信息）"""
         if not self.llm:
             return None
 
@@ -533,8 +540,8 @@ class MemoryManager:
         # 计算统计数据
         stats = self._calculate_stats(weekly_cases)
 
-        # LLM 生成摘要
-        summary_text = await self._llm_summarize(weekly_cases, 'weekly')
+        # LLM 生成摘要（包含账户信息）
+        summary_text = await self._llm_summarize(weekly_cases, 'weekly', account_info)
 
         if not summary_text:
             return None
@@ -631,16 +638,47 @@ class MemoryManager:
             'sharpe_ratio': sharpe_ratio
         }
 
-    async def _llm_summarize(self, cases: List[TradingCase], period_type: str) -> Optional[str]:
-        """使用LLM生成摘要"""
+    async def _llm_summarize(self, cases: List[TradingCase], period_type: str, account_info: dict = None) -> Optional[str]:
+        """使用LLM生成摘要（可包含账户信息）"""
         if not self.llm:
             return None
 
         # 准备案例数据
         cases_text = self._prepare_cases_for_summary(cases)
 
+        # 准备账户信息文本
+        account_text = ""
+        if account_info:
+            balance = account_info.get('balance', {})
+            stats = account_info.get('statistics', {})
+            positions = account_info.get('open_positions', [])
+
+            account_text = f"""
+## 当前账户状态
+
+- 账户余额: ${balance.get('total', 0):.2f}
+- 可用资金: ${balance.get('available', 0):.2f}
+- 冻结保证金: ${balance.get('frozen', 0):.2f}
+"""
+            if stats:
+                account_text += f"""- 累计平仓次数: {stats.get('total_positions', 0)} 次
+  - 盈利次数: {stats.get('win_count', 0)} 次
+  - 亏损次数: {stats.get('loss_count', 0)} 次
+  - 胜率: {stats.get('win_rate', 0) * 100:.1f}%
+- 已实现总盈亏: ${stats.get('total_pnl', 0):.2f}
+  - 最大盈利: ${stats.get('max_profit', 0):.2f}
+  - 最大亏损: ${stats.get('max_loss', 0):.2f}
+"""
+            if positions:
+                unrealized_total = sum(float(p.get('unrealized_pnl', 0)) for p in positions)
+                account_text += f"""- 当前持仓: {len(positions)} 个
+- 未实现盈亏: ${unrealized_total:.2f}
+"""
+
         prompt = f"""
 请对以下{period_type}期间的交易案例进行深度分析和总结。
+
+{account_text}
 
 {cases_text}
 
@@ -656,6 +694,7 @@ class MemoryManager:
 - 保持简洁，每条不超过50字
 - 专注于可复用的模式，而非具体细节
 - 提取本质规律，忽略噪音
+- 如果提供了账户信息，请结合账户整体表现进行分析
 
 输出格式：
 ```json

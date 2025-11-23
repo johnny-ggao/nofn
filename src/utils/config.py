@@ -25,6 +25,12 @@ class LLMConfig(BaseModel):
     base_url: Optional[str] = Field(default=None, description="API 基础 URL")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="温度参数")
 
+    # Embedding 配置
+    embedding_provider: str = Field(default="openai", description="Embedding 提供商 (openai/zhipu/ollama/dashscope)")
+    embedding_api_key: Optional[str] = Field(default=None, description="Embedding API Key (默认使用 api_key)")
+    embedding_base_url: Optional[str] = Field(default=None, description="Embedding API URL (可选)")
+    embedding_model: Optional[str] = Field(default=None, description="Embedding 模型 (可选，使用默认)")
+
 
 class RiskConfig(BaseModel):
     """风控配置"""
