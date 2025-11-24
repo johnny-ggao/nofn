@@ -69,7 +69,6 @@ class LearningGraph:
         self.memory = memory_manager
         self.checkpoint_db = checkpoint_db
 
-        # Graph 延迟初始化（需要异步创建 checkpointer）
         self.graph = None
         self._checkpointer = None
 

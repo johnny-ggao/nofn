@@ -51,8 +51,7 @@ async def run_new_architecture():
         )
         await adapter.initialize()
 
-        # 初始化交易历史管理器（使用独立的 trades 数据库）
-        trade_history = TradeHistoryManager()  # 默认: data/trades.db
+        trade_history = TradeHistoryManager()
 
         engine = TradingEngine(adapter=adapter, trade_history=trade_history)
         cprint("✅ Layer 1 (执行层) 初始化完成", "green")
@@ -71,7 +70,7 @@ async def run_new_architecture():
         decision_maker = DecisionMaker(llm=llm)
         cprint("✅ Layer 2 (决策层) 初始化完成", "green")
 
-        # Layer 3: 学习层（使用独立数据库避免锁冲突）
+        # Layer 3: 学习层
         from src.learning import LearningGraph, MemoryManager
 
         memory_manager = MemoryManager(llm=llm)  # 默认: data/memory.db
@@ -79,7 +78,6 @@ async def run_new_architecture():
             engine=engine,
             decision_maker=decision_maker,
             memory_manager=memory_manager
-            # checkpoint_db 使用默认值 data/checkpoint.db
         )
         cprint("✅ Layer 3 (学习层) 初始化完成", "green")
 
