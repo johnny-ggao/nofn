@@ -42,6 +42,23 @@ exchanges:
     # 是否使用测试网
     testnet: false
 
+  # Binance 永续合约配置
+  binance:
+    # API Key (从 Binance 获取)
+    api_key: "your_binance_api_key_here"
+
+    # API Secret
+    api_secret: "your_binance_api_secret_here"
+
+    # 是否使用测试网 (testnet.binancefuture.com)
+    testnet: false
+
+  # Binance USDC 永续合约 (使用不同的保证金类型)
+  binance_usdc:
+    api_key: "your_binance_api_key_here"
+    api_secret: "your_binance_api_secret_here"
+    testnet: false
+
 # 策略运行配置
 strategy:
   # 使用的交易所

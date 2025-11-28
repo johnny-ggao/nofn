@@ -512,3 +512,210 @@ def crossunder(series1: NDArray, series2: NDArray) -> NDArray:
     """
     below = series1 < series2
     return np.append([False], below[1:] & ~below[:-1])
+
+
+def adx(
+    high: Union[List[float], List[Decimal], NDArray],
+    low: Union[List[float], List[Decimal], NDArray],
+    close: Union[List[float], List[Decimal], NDArray],
+    period: int = 14
+) -> Tuple[NDArray, NDArray, NDArray]:
+    """
+    平均趋向指标 (Average Directional Index)
+
+    用于判断趋势强度:
+    - ADX > 25: 强趋势
+    - ADX < 20: 弱趋势或盘整
+
+    Args:
+        high: 最高价数据
+        low: 最低价数据
+        close: 收盘价数据
+        period: 周期，默认 14
+
+    Returns:
+        Tuple[NDArray, NDArray, NDArray]: (ADX, +DI, -DI)
+    """
+    high_arr = to_float_array(high)
+    low_arr = to_float_array(low)
+    close_arr = to_float_array(close)
+
+    n = len(high_arr)
+    if n < period + 1:
+        raise ValueError(f"数据长度 {n} 不足以计算 ADX (需要至少 {period + 1} 个数据点)")
+
+    # 计算 +DM 和 -DM
+    plus_dm = np.zeros(n)
+    minus_dm = np.zeros(n)
+
+    for i in range(1, n):
+        up_move = high_arr[i] - high_arr[i - 1]
+        down_move = low_arr[i - 1] - low_arr[i]
+
+        if up_move > down_move and up_move > 0:
+            plus_dm[i] = up_move
+        if down_move > up_move and down_move > 0:
+            minus_dm[i] = down_move
+
+    # 计算 TR
+    tr = np.zeros(n)
+    tr[0] = high_arr[0] - low_arr[0]
+    for i in range(1, n):
+        hl = high_arr[i] - low_arr[i]
+        hc = abs(high_arr[i] - close_arr[i - 1])
+        lc = abs(low_arr[i] - close_arr[i - 1])
+        tr[i] = max(hl, hc, lc)
+
+    # 平滑 TR, +DM, -DM
+    smoothed_tr = np.full(n, np.nan)
+    smoothed_plus_dm = np.full(n, np.nan)
+    smoothed_minus_dm = np.full(n, np.nan)
+
+    # 初始值使用简单求和
+    smoothed_tr[period] = np.sum(tr[1:period + 1])
+    smoothed_plus_dm[period] = np.sum(plus_dm[1:period + 1])
+    smoothed_minus_dm[period] = np.sum(minus_dm[1:period + 1])
+
+    # Wilder 平滑
+    for i in range(period + 1, n):
+        smoothed_tr[i] = smoothed_tr[i - 1] - (smoothed_tr[i - 1] / period) + tr[i]
+        smoothed_plus_dm[i] = smoothed_plus_dm[i - 1] - (smoothed_plus_dm[i - 1] / period) + plus_dm[i]
+        smoothed_minus_dm[i] = smoothed_minus_dm[i - 1] - (smoothed_minus_dm[i - 1] / period) + minus_dm[i]
+
+    # 计算 +DI 和 -DI
+    plus_di = np.full(n, np.nan)
+    minus_di = np.full(n, np.nan)
+
+    for i in range(period, n):
+        if smoothed_tr[i] > 0:
+            plus_di[i] = 100 * smoothed_plus_dm[i] / smoothed_tr[i]
+            minus_di[i] = 100 * smoothed_minus_dm[i] / smoothed_tr[i]
+
+    # 计算 DX 和 ADX
+    dx = np.full(n, np.nan)
+    for i in range(period, n):
+        if plus_di[i] is not None and minus_di[i] is not None:
+            di_sum = plus_di[i] + minus_di[i]
+            if di_sum > 0:
+                dx[i] = 100 * abs(plus_di[i] - minus_di[i]) / di_sum
+
+    # ADX = DX 的平滑
+    adx_values = np.full(n, np.nan)
+
+    # 第一个 ADX 使用 DX 的简单平均
+    first_adx_idx = period + period - 1
+    if first_adx_idx < n:
+        valid_dx = [dx[i] for i in range(period, first_adx_idx + 1) if not np.isnan(dx[i])]
+        if valid_dx:
+            adx_values[first_adx_idx] = np.mean(valid_dx)
+
+        # 后续使用 Wilder 平滑
+        for i in range(first_adx_idx + 1, n):
+            if not np.isnan(dx[i]) and not np.isnan(adx_values[i - 1]):
+                adx_values[i] = (adx_values[i - 1] * (period - 1) + dx[i]) / period
+
+    return adx_values, plus_di, minus_di
+
+
+def stochastic_slow(
+    high: Union[List[float], List[Decimal], NDArray],
+    low: Union[List[float], List[Decimal], NDArray],
+    close: Union[List[float], List[Decimal], NDArray],
+    k_period: int = 14,
+    k_smooth: int = 3,
+    d_period: int = 3
+) -> Tuple[NDArray, NDArray]:
+    """
+    慢速随机指标 (Slow Stochastic)
+
+    %K = SMA(Raw %K, k_smooth)
+    %D = SMA(%K, d_period)
+
+    Args:
+        high: 最高价数据
+        low: 最低价数据
+        close: 收盘价数据
+        k_period: 原始 %K 周期，默认 14
+        k_smooth: %K 平滑周期，默认 3
+        d_period: %D 周期，默认 3
+
+    Returns:
+        Tuple[NDArray, NDArray]: (慢速 %K, 慢速 %D)
+    """
+    # 先计算快速随机
+    fast_k, _ = stochastic_oscillator(high, low, close, k_period, 1)
+
+    # 平滑 %K
+    n = len(fast_k)
+    slow_k = np.full(n, np.nan)
+
+    valid_start = k_period - 1
+    if valid_start + k_smooth <= n:
+        fast_k_valid = fast_k[valid_start:]
+        slow_k_values = sma(fast_k_valid, k_smooth)
+        slow_k[valid_start:] = slow_k_values
+
+    # 计算 %D
+    slow_d = np.full(n, np.nan)
+    slow_k_start = valid_start + k_smooth - 1
+
+    if slow_k_start + d_period <= n:
+        slow_k_valid = slow_k[slow_k_start:]
+        # 过滤 NaN
+        valid_indices = ~np.isnan(slow_k_valid)
+        if np.sum(valid_indices) >= d_period:
+            slow_d_values = sma(slow_k_valid, d_period)
+            slow_d[slow_k_start:] = slow_d_values
+
+    return slow_k, slow_d
+
+
+def volume_roc(
+    volume: Union[List[float], List[Decimal], NDArray],
+    period: int = 5
+) -> NDArray:
+    """
+    成交量变化率 (Volume Rate of Change)
+
+    Volume ROC = (Current Volume - Volume N periods ago) / Volume N periods ago * 100
+
+    Args:
+        volume: 成交量数据
+        period: 周期，默认 5
+
+    Returns:
+        NDArray: Volume ROC 值数组 (百分比)
+    """
+    vol_arr = to_float_array(volume)
+    n = len(vol_arr)
+
+    if n < period + 1:
+        raise ValueError(f"数据长度 {n} 不足以计算 Volume ROC (需要至少 {period + 1} 个数据点)")
+
+    roc_values = np.full(n, np.nan)
+
+    for i in range(period, n):
+        prev_vol = vol_arr[i - period]
+        if prev_vol > 0:
+            roc_values[i] = (vol_arr[i] - prev_vol) / prev_vol * 100
+        else:
+            roc_values[i] = 0
+
+    return roc_values
+
+
+def volume_sma(
+    volume: Union[List[float], List[Decimal], NDArray],
+    period: int = 5
+) -> NDArray:
+    """
+    成交量简单移动平均
+
+    Args:
+        volume: 成交量数据
+        period: 周期，默认 5
+
+    Returns:
+        NDArray: Volume SMA 值数组
+    """
+    return sma(volume, period)

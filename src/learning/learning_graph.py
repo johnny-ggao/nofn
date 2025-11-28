@@ -1,290 +1,538 @@
 """
-学习图 (Layer 3)
+学习图 (Layer 3) - 完全基于 Agno
 
-使用LangGraph实现的学习和进化系统
+使用 Agno 的原生能力实现学习和进化系统：
+- TradingAgents: 专用的决策和反思 Agent
+- TradingMemory: 基于 Agno 的记忆系统
+- Session State: Agno 原生会话状态管理
 """
 import asyncio
-from typing import TypedDict, List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any
 from datetime import datetime
+from dataclasses import dataclass, field
 
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from agno.db.sqlite import SqliteDb
 from termcolor import cprint
 
 from ..engine.trading_engine import TradingEngine
 from ..engine.market_snapshot import MarketSnapshot
-from ..decision.decision_maker import DecisionMaker, Decision
-from .memory_manager import MemoryManager, TradingCase
+from .trading_memory import TradingMemory, TradingCase
+from .agents import TradingAgents
 
 
-class TradingState(TypedDict):
+@dataclass
+class TradingState:
     """交易状态"""
     # 输入
-    symbols: List[str]
+    symbols: List[str] = field(default_factory=list)
 
-    # Layer 1数据
-    market_snapshot: Optional[MarketSnapshot]
+    # Layer 1 数据
+    market_snapshot: Optional[MarketSnapshot] = None
 
-    # Layer 3记忆
-    memory_context: Optional[str]
-    similar_cases: Optional[List[TradingCase]]
+    # Layer 3 记忆
+    memory_context: Optional[str] = None
 
-    # Layer 2决策
-    decision: Optional[Decision]
+    # Layer 2 决策
+    decision: Optional[Dict[str, Any]] = None
 
     # 执行结果
-    execution_results: Optional[List[Dict]]
+    execution_results: Optional[List[Dict]] = None
 
     # 反思
-    reflection: Optional[str]
-    lessons_learned: Optional[List[str]]
+    reflection: Optional[Dict[str, Any]] = None
 
     # 元数据
-    iteration: int
-    timestamp: datetime
+    iteration: int = 0
+    timestamp: datetime = field(default_factory=datetime.now)
 
 
 class LearningGraph:
     """
-    学习图
+    学习图 (完全基于 Agno)
 
-    核心创新：将LangGraph用在真正重要的地方
-    - 状态管理
-    - 记忆检索
-    - 反思学习
-    - 策略优化
+    核心组件：
+    - TradingAgents: Agno Agent 集合 (决策、反思、摘要)
+    - TradingMemory: Agno 原生记忆系统
+    - SqliteDb: Agno 持久化存储
 
-    而不是用于简单的工具调用
+    工作流程：
+    1. 获取市场数据 (Layer 1)
+    2. 检索历史记忆 (TradingMemory)
+    3. 做出决策 (TradingAgents.decision_agent)
+    4. 执行交易 (Layer 1)
+    5. 反思学习 (TradingAgents.reflection_agent)
+    6. 更新记忆 (TradingMemory)
     """
 
     def __init__(
         self,
         engine: TradingEngine,
-        decision_maker: DecisionMaker,
-        memory_manager: MemoryManager,
-        checkpoint_db: str = "data/checkpoint.db"
+        db_path: str = "data/agno_trading.db",
+        model_provider: str = "openai",
+        model_id: str = "gpt-4o-mini",
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        temperature: float = 0.7,
+        system_prompt_path: Optional[str] = None,
     ):
         self.engine = engine
-        self.decision_maker = decision_maker
-        self.memory = memory_manager
-        self.checkpoint_db = checkpoint_db
 
-        self.graph = None
-        self._checkpointer = None
+        # 创建 Agno SqliteDb
+        self.db = SqliteDb(db_file=db_path)
 
-    def _build_graph(self) -> StateGraph:
-        """构建学习图"""
-        # 创建图
-        workflow = StateGraph(TradingState)
+        # 创建 TradingMemory (基于 Agno)
+        self.memory = TradingMemory(
+            db_path=db_path,
+            user_id="nofn_trading",
+            model_provider=model_provider,
+            model_id=model_id,
+            api_key=api_key,
+            base_url=base_url,
+        )
 
-        # 添加节点
-        workflow.add_node("retrieve_memory", self._retrieve_memory)
-        workflow.add_node("get_market_data", self._get_market_data)
-        workflow.add_node("decide", self._decide)
-        workflow.add_node("execute", self._execute)
-        workflow.add_node("reflect", self._reflect)
-        workflow.add_node("update_memory", self._update_memory)
+        # 加载系统提示词路径
+        if system_prompt_path is None:
+            from pathlib import Path
+            system_prompt_path = str(
+                Path(__file__).parent.parent / "prompts" / "nofn_v2.txt"
+            )
 
-        # 设置入口
-        workflow.set_entry_point("get_market_data")
+        # 创建 TradingAgents
+        self.agents = TradingAgents(
+            db=self.db,
+            model_provider=model_provider,
+            model_id=model_id,
+            api_key=api_key,
+            base_url=base_url,
+            temperature=temperature,
+            system_prompt_path=system_prompt_path,
+        )
 
-        # 添加边
-        workflow.add_edge("get_market_data", "retrieve_memory")
-        workflow.add_edge("retrieve_memory", "decide")
-        workflow.add_edge("decide", "execute")
-        workflow.add_edge("execute", "reflect")
-        workflow.add_edge("reflect", "update_memory")
-        workflow.add_edge("update_memory", END)
+        cprint("✅ LearningGraph 初始化完成", "green")
 
-        # 异步初始化 checkpointer
-        # 注意：checkpointer 将在 _ensure_graph_initialized 中创建
-        return workflow
+    async def run_iteration(self, symbols: List[str], iteration: int = 0) -> TradingState:
+        """运行一次迭代"""
+        state = TradingState(
+            symbols=symbols,
+            iteration=iteration,
+            timestamp=datetime.now(),
+        )
 
-    async def _get_market_data(self, state: TradingState) -> Dict[str, Any]:
-        """获取市场数据（Layer 1）"""
+        try:
+            # Step 1: 获取市场数据
+            state = await self._get_market_data(state)
+
+            # Step 2: 检索记忆
+            state = await self._retrieve_memory(state)
+
+            # Step 3: 决策
+            state = await self._decide(state)
+
+            # Step 4: 执行
+            state = await self._execute(state)
+
+            # Step 5: 反思
+            state = await self._reflect(state)
+
+            # Step 6: 更新记忆
+            state = await self._update_memory(state)
+
+            return state
+
+        except Exception as e:
+            cprint(f"❌ 迭代执行失败: {e}", "red")
+            import traceback
+            traceback.print_exc()
+            return state
+
+    async def _get_market_data(self, state: TradingState) -> TradingState:
+        """获取市场数据 (Layer 1)"""
         cprint("\n" + "=" * 70, "cyan")
-        cprint(f"📊 迭代 {state.get('iteration', 0) + 1}: 获取市场数据", "cyan")
+        cprint(f"📊 迭代 {state.iteration + 1}: 获取市场数据", "cyan")
         cprint("=" * 70, "cyan")
 
-        snapshot = await self.engine.get_market_snapshot(state['symbols'])
+        # 打印绩效统计（夏普率等）
+        self._print_performance_stats()
 
-        return {
-            'market_snapshot': snapshot,
-            'timestamp': datetime.now()
-        }
+        snapshot = await self.engine.get_market_snapshot(state.symbols)
+        state.market_snapshot = snapshot
+        state.timestamp = datetime.now()
 
-    async def _retrieve_memory(self, state: TradingState) -> Dict[str, Any]:
-        """检索相关记忆（Layer 3）"""
+        # 打印详细的市场数据和指标
+        self._print_market_data(snapshot)
+
+        return state
+
+    def _print_performance_stats(self):
+        """打印绩效统计（夏普率等风险调整指标）"""
+        # 获取统计数据
+        stats_7d = self.engine.trade_history.get_statistics(days=7)
+        stats_all = self.engine.trade_history.get_statistics()
+
+        # 只有有交易记录时才打印
+        if stats_all['total_positions'] == 0:
+            cprint("📊 暂无历史交易数据", "yellow")
+            return
+
+        cprint("\n📈 绩效统计:", "magenta")
+
+        # 7天统计
+        if stats_7d['total_positions'] > 0:
+            cprint(f"  【7天】交易:{stats_7d['total_positions']}笔 | "
+                   f"胜率:{stats_7d['win_rate']*100:.1f}% | "
+                   f"盈亏:${stats_7d['total_pnl']:.2f} | "
+                   f"夏普:{stats_7d['sharpe_ratio']:.2f} | "
+                   f"最大回撤:${stats_7d['max_drawdown']:.2f}", "white")
+
+        # 全部统计
+        cprint(f"  【总计】交易:{stats_all['total_positions']}笔 | "
+               f"胜率:{stats_all['win_rate']*100:.1f}% | "
+               f"盈亏:${stats_all['total_pnl']:.2f} | "
+               f"夏普:{stats_all['sharpe_ratio']:.2f} | "
+               f"索提诺:{stats_all['sortino_ratio']:.2f}", "white")
+
+        # 详细风险指标
+        cprint(f"  【风险】利润因子:{stats_all['profit_factor']:.2f} | "
+               f"期望值:${stats_all['expectancy']:.2f} | "
+               f"盈亏比:{stats_all['risk_reward_ratio']:.2f} | "
+               f"最大回撤:{stats_all['max_drawdown_percent']:.1f}%", "white")
+
+        # 盈亏分析
+        cprint(f"  【盈亏】平均盈利:${stats_all['avg_win']:.2f} | "
+               f"平均亏损:${stats_all['avg_loss']:.2f} | "
+               f"最大盈利:${stats_all['max_profit']:.2f} | "
+               f"最大亏损:${stats_all['max_loss']:.2f}", "white")
+
+    def _print_market_data(self, snapshot: MarketSnapshot):
+        """打印市场数据和指标（仅数值，不做趋势判断）"""
+        if not snapshot or not snapshot.assets:
+            return
+
+        for symbol, asset in snapshot.assets.items():
+            cprint(f"\n{'─' * 70}", "yellow")
+            cprint(f"📈 {symbol}", "yellow")
+            cprint(f"{'─' * 70}", "yellow")
+
+            # 价格
+            cprint(f"💰 价格: ${float(asset.current_price):.2f}", "white")
+
+            # 24小时统计
+            if asset.change_24h_percent is not None:
+                cprint(f"📊 24H变化: {asset.change_24h_percent:+.2f}%", "white")
+
+            # 永续合约指标
+            if asset.funding_rate is not None:
+                cprint(f"📋 资金费率: {asset.funding_rate * 100:+.4f}%  |  持仓量: ${(asset.open_interest or 0) / 1e6:.2f}M", "white")
+
+            # 4小时指标
+            if asset.tf_4h:
+                self._print_tf_indicators("4H", asset.tf_4h)
+
+            # 1小时指标
+            if asset.tf_1h:
+                self._print_tf_indicators("1H", asset.tf_1h)
+
+            # 15分钟指标
+            if asset.tf_15m:
+                self._print_tf_indicators("15M", asset.tf_15m)
+
+    def _print_tf_indicators(self, name: str, tf):
+        """打印单个时间框架指标（仅数值，不做趋势判断）"""
+        # EMA 序列（最新10个点）
+        ema_lines = []
+        if tf.ema8_series:
+            ema8_str = ",".join([f"{v:.1f}" for v in tf.ema8_series])
+            ema_lines.append(f"EMA8:[{ema8_str}]")
+        if tf.ema21_series:
+            ema21_str = ",".join([f"{v:.1f}" for v in tf.ema21_series])
+            ema_lines.append(f"EMA21:[{ema21_str}]")
+        if tf.ema50_series:
+            ema50_str = ",".join([f"{v:.1f}" for v in tf.ema50_series])
+            ema_lines.append(f"EMA50:[{ema50_str}]")
+
+        # 其他指标
+        other_parts = []
+
+        # RSI
+        if tf.rsi is not None:
+            other_parts.append(f"RSI:{tf.rsi:.1f}")
+
+        # MACD (使用 macd_value 属性名)
+        if tf.macd_value is not None and tf.macd_signal is not None and tf.macd_histogram is not None:
+            other_parts.append(f"MACD:{tf.macd_value:.2f}/{tf.macd_signal:.2f}/{tf.macd_histogram:.2f}")
+
+        # ADX
+        if tf.adx is not None:
+            other_parts.append(f"ADX:{tf.adx:.1f}")
+
+        # Stochastic
+        if tf.stoch_k is not None and tf.stoch_d is not None:
+            other_parts.append(f"Stoch:{tf.stoch_k:.1f}/{tf.stoch_d:.1f}")
+
+        # ATR
+        if tf.atr is not None:
+            other_parts.append(f"ATR:{tf.atr:.2f}")
+
+        # Bollinger Bands
+        if tf.bb_upper is not None and tf.bb_lower is not None:
+            other_parts.append(f"BB:{tf.bb_lower:.2f}-{tf.bb_upper:.2f}")
+
+        # 打印输出
+        cprint(f"⏱️  {name}:", "white")
+        for ema_line in ema_lines:
+            cprint(f"    {ema_line}", "white")
+        if other_parts:
+            cprint(f"    {' | '.join(other_parts)}", "white")
+
+    async def _retrieve_memory(self, state: TradingState) -> TradingState:
+        """检索历史记忆 (TradingMemory)"""
         cprint("\n🧠 检索历史记忆...", "cyan")
 
-        snapshot = state['market_snapshot']
+        snapshot = state.market_snapshot
+        market_conditions = snapshot.to_dict() if snapshot else {}
 
-        # 检索相似案例
-        similar_cases = self.memory.search_similar(
-            snapshot.to_dict() if snapshot else {},
-            k=5
-        )
-
-        # 生成记忆上下文
-        memory_context = self.memory.to_context(
+        # 使用 TradingMemory 获取上下文
+        memory_context = self.memory.get_context(
+            market_conditions=market_conditions,
             recent_days=7,
-            similar_cases=similar_cases
         )
 
-        if similar_cases:
-            cprint(f"✅ 找到 {len(similar_cases)} 个相似案例", "green")
+        state.memory_context = memory_context
+
+        # 搜索相似案例
+        similar = self.memory.search_similar(market_conditions, limit=3)
+        if similar:
+            cprint(f"✅ 找到 {len(similar)} 个相似案例", "green")
         else:
             cprint("ℹ️ 没有找到相似案例", "yellow")
 
-        return {
-            'memory_context': memory_context,
-            'similar_cases': similar_cases
-        }
+        return state
 
-    async def _decide(self, state: TradingState) -> Dict[str, Any]:
-        """做出决策（Layer 2）"""
-        snapshot = state['market_snapshot']
-        memory_context = state.get('memory_context')
+    async def _decide(self, state: TradingState) -> TradingState:
+        """做出决策 (TradingAgents.decision_agent)"""
+        cprint("\n" + "=" * 70, "cyan")
+        cprint("🧠 LLM 开始分析决策...", "cyan")
+        cprint("=" * 70, "cyan")
 
-        decision = await self.decision_maker.analyze_and_decide(
-            snapshot,
-            memory_context
+        decision = await self.agents.make_decision(
+            market_snapshot=state.market_snapshot,
+            memory_context=state.memory_context,
         )
 
-        return {'decision': decision}
+        state.decision = decision
 
-    async def _execute(self, state: TradingState) -> Dict[str, Any]:
-        """执行交易（Layer 1）"""
-        decision = state.get('decision')
-        if not decision or not decision.signals:
+        # 打印 LLM 分析内容
+        analysis = decision.get('analysis', '')
+        if analysis:
+            cprint(f"\n{analysis}\n", "white")
+
+        # 打印决策结果
+        cprint("=" * 70, "green")
+        cprint(f"✅ 决策完成: {decision.get('decision_type', 'wait')}", "green")
+        cprint("=" * 70, "green")
+
+        # 打印每个信号的详细内容
+        signals = decision.get('signals', [])
+        if signals:
+            cprint(f"\n📋 交易信号 ({len(signals)} 个):", "cyan")
+            for i, signal in enumerate(signals, 1):
+                action = signal.get('action', 'N/A')
+                symbol = signal.get('symbol', 'N/A')
+                confidence = signal.get('confidence', 'N/A')
+                reason = signal.get('reason', 'N/A')
+
+                # 根据动作类型选择颜色
+                if action in ['open_long', 'close_short']:
+                    action_color = "green"
+                elif action in ['open_short', 'close_long']:
+                    action_color = "red"
+                elif action == 'close_position':
+                    action_color = "yellow"
+                else:
+                    action_color = "white"
+
+                cprint(f"\n  [{i}] {action.upper()} {symbol}", action_color)
+                if signal.get('amount'):
+                    cprint(f"      数量: {signal.get('amount')}", "white")
+                if signal.get('leverage'):
+                    cprint(f"      杠杆: {signal.get('leverage')}x", "white")
+                if signal.get('stop_loss'):
+                    cprint(f"      止损: ${signal.get('stop_loss')}", "white")
+                if signal.get('take_profit'):
+                    cprint(f"      止盈: ${signal.get('take_profit')}", "white")
+                cprint(f"      置信度: {confidence}%", "white")
+                cprint(f"      原因: {reason}", "white")
+
+        return state
+
+    async def _execute(self, state: TradingState) -> TradingState:
+        """执行交易 (Layer 1)"""
+        decision = state.decision
+        if not decision or not decision.get('signals'):
             cprint("\n✋ 无决策信号，跳过执行", "yellow")
-            return {'execution_results': []}
+            state.execution_results = []
+            return state
 
-        market_snapshot = state.get('market_snapshot')
+        signals = decision['signals']
+        market_snapshot = state.market_snapshot
         results = []
 
-        # 检查是否有需要执行的信号（非wait的信号）
-        executable_signals = [s for s in decision.signals if s.action != 'wait']
+        # 检查是否有需要执行的信号
+        executable_signals = [s for s in signals if s.get('action') != 'wait']
         if not executable_signals:
             cprint("\n✋ 仅有观望信号，无需执行", "yellow")
-            return {'execution_results': []}
+            state.execution_results = []
+            return state
 
         cprint("\n" + "=" * 70, "green")
         cprint("⚡ 执行交易信号...", "green")
         cprint("=" * 70, "green")
 
-        for signal in decision.signals:
-            # 完全跳过 'wait' 信号
-            if signal.action == 'wait':
+        for signal in signals:
+            action = signal.get('action', 'wait')
+
+            # 跳过 wait 信号
+            if action == 'wait':
                 continue
 
-            # 处理 'hold' 信号 - 检查是否需要更新止损止盈
-            if signal.action == 'hold':
-                # 获取当前持仓信息
-                if market_snapshot and signal.symbol in market_snapshot.assets:
-                    asset = market_snapshot.assets[signal.symbol]
-
-                    # 检查是否有持仓
-                    if asset.position_size > 0:
-                        current_sl = float(asset.stop_loss) if asset.stop_loss else None
-                        current_tp = float(asset.take_profit) if asset.take_profit else None
-                        signal_sl = float(signal.stop_loss) if signal.stop_loss else None
-                        signal_tp = float(signal.take_profit) if signal.take_profit else None
-
-                        # 判断是否需要更新止损止盈
-                        # 使用更大的阈值避免频繁微调：
-                        # - 绝对差异 > 1.0 美元（避免噪音）
-                        # - 或相对差异 > 0.5%（对于大价格）
-                        needs_update = False
-                        update_reason = []
-
-                        # 计算合理的阈值（价格的0.3%，但至少1美元）
-                        current_price = float(asset.current_price) if asset.current_price else 0
-                        min_threshold = max(1.0, current_price * 0.003)
-
-                        if signal_sl is not None:
-                            if current_sl is None:
-                                # 缺失止损，必须添加
-                                needs_update = True
-                                update_reason.append(f"止损: 未设置 → {signal_sl}")
-                            elif abs(signal_sl - current_sl) > min_threshold:
-                                # 差异显著，需要更新
-                                needs_update = True
-                                update_reason.append(f"止损: {current_sl} → {signal_sl}")
-
-                        if signal_tp is not None:
-                            if current_tp is None:
-                                # 缺失止盈，必须添加
-                                needs_update = True
-                                update_reason.append(f"止盈: 未设置 → {signal_tp}")
-                            elif abs(signal_tp - current_tp) > min_threshold:
-                                # 差异显著，需要更新
-                                needs_update = True
-                                update_reason.append(f"止盈: {current_tp} → {signal_tp}")
-
-                        if needs_update:
-                            cprint(f"\n🔧 更新 {signal.symbol} 止损止盈", "cyan")
-                            cprint(f"   {', '.join(update_reason)}", "yellow")
-
-                            # 执行更新
-                            result = await self.engine.execute_signal({
-                                'action': 'set_stop_loss_take_profit',
-                                'symbol': signal.symbol,
-                                'stop_loss': signal_sl,
-                                'take_profit': signal_tp,
-                            })
-
-                            results.append({
-                                'signal': signal,
-                                'result': result,
-                                'timestamp': datetime.now(),
-                                'action_detail': 'update_sl_tp'
-                            })
-
-                            if result.get('success'):
-                                cprint(f"✅ 止损止盈更新成功", "green")
-                            else:
-                                cprint(f"❌ 止损止盈更新失败: {result.get('error')}", "red")
-                        else:
-                            cprint(f"\n✋ {signal.symbol} 止损止盈无需更新", "yellow")
-
+            # 处理 hold 信号
+            if action == 'hold':
+                result = await self._handle_hold_signal(signal, market_snapshot)
+                if result:
+                    results.append(result)
                 continue
 
-            # 执行其他交易信号（开仓、平仓等）
-            cprint(f"\n执行: {signal.action} {signal.symbol}", "cyan")
+            # 执行其他交易信号
+            cprint(f"\n执行: {action} {signal.get('symbol', '')}", "cyan")
 
             result = await self.engine.execute_signal({
-                'action': signal.action,
-                'symbol': signal.symbol,
-                'amount': signal.amount,
-                'leverage': signal.leverage,
-                'stop_loss': signal.stop_loss,
-                'take_profit': signal.take_profit,
+                'action': action,
+                'symbol': signal.get('symbol'),
+                'amount': signal.get('amount'),
+                'leverage': signal.get('leverage'),
+                'stop_loss': signal.get('stop_loss'),
+                'take_profit': signal.get('take_profit'),
             })
 
             results.append({
                 'signal': signal,
                 'result': result,
-                'timestamp': datetime.now()
+                'timestamp': datetime.now(),
             })
 
             if result.get('success'):
-                cprint(f"✅ {signal.action} 执行成功", "green")
+                cprint(f"✅ {action} 执行成功", "green")
             else:
-                cprint(f"❌ {signal.action} 执行失败: {result.get('error')}", "red")
+                cprint(f"❌ {action} 执行失败: {result.get('error')}", "red")
 
-        return {'execution_results': results}
+        state.execution_results = results
+        return state
 
-    async def _reflect(self, state: TradingState) -> Dict[str, Any]:
-        """反思和学习（Layer 3 + LLM）"""
-        decision = state.get('decision')
-        execution_results = state.get('execution_results', [])
+    async def _handle_hold_signal(
+        self,
+        signal: Dict,
+        market_snapshot: MarketSnapshot,
+    ) -> Optional[Dict]:
+        """处理 hold 信号 - 检查是否需要更新止损止盈"""
+        signal_symbol = signal.get('symbol', '')
+        if not signal_symbol:
+            return None
+
+        # 尝试匹配 symbol（处理 USDT/USDC 不同交易对的情况）
+        # 例如 signal 返回 BTC/USDC:USDC，但 market_snapshot 中是 BTC/USDT:USDT
+        base_symbol = signal_symbol.split('/')[0]  # 提取基础币种如 BTC
+        matched_asset = None
+        matched_symbol = None
+
+        for asset_symbol, asset in market_snapshot.assets.items():
+            if asset_symbol.startswith(base_symbol + '/'):
+                matched_asset = asset
+                matched_symbol = asset_symbol
+                break
+
+        if not matched_asset:
+            cprint(f"⚠️  {signal_symbol} 未在市场快照中找到对应资产", "yellow")
+            return None
+
+        # 检查是否有持仓（可能在不同交易对上）
+        # 如果 market_snapshot 中的持仓为 0，尝试直接查询该 symbol 的持仓
+        if matched_asset.position_size <= 0:
+            # 直接查询 signal 指定的 symbol 的持仓
+            position = await self.engine.adapter.get_position(signal_symbol)
+            if not position or position.amount <= 0:
+                return None
+            # 使用 signal_symbol 而不是 matched_symbol
+            current_sl = float(position.stop_loss) if position.stop_loss else None
+            current_tp = float(position.take_profit) if position.take_profit else None
+            current_price = float(matched_asset.current_price) if matched_asset.current_price else 0
+        else:
+            current_sl = float(matched_asset.stop_loss) if matched_asset.stop_loss else None
+            current_tp = float(matched_asset.take_profit) if matched_asset.take_profit else None
+            current_price = float(matched_asset.current_price) if matched_asset.current_price else 0
+
+        # 获取信号中的止损止盈
+        signal_sl = signal.get('stop_loss')
+        signal_tp = signal.get('take_profit')
+
+        needs_update = False
+        update_reason = []
+
+        # 计算阈值（价格变化超过 0.3% 才更新）
+        min_threshold = max(1.0, current_price * 0.003)
+
+        if signal_sl is not None:
+            if current_sl is None:
+                needs_update = True
+                update_reason.append(f"止损: 未设置 → {signal_sl}")
+            elif abs(float(signal_sl) - current_sl) > min_threshold:
+                needs_update = True
+                update_reason.append(f"止损: {current_sl} → {signal_sl}")
+
+        if signal_tp is not None:
+            if current_tp is None:
+                needs_update = True
+                update_reason.append(f"止盈: 未设置 → {signal_tp}")
+            elif abs(float(signal_tp) - current_tp) > min_threshold:
+                needs_update = True
+                update_reason.append(f"止盈: {current_tp} → {signal_tp}")
+
+        if not needs_update:
+            cprint(f"\n✋ {signal_symbol} 止损止盈无需更新", "yellow")
+            return None
+
+        cprint(f"\n🔧 更新 {signal_symbol} 止损止盈", "cyan")
+        cprint(f"   {', '.join(update_reason)}", "yellow")
+
+        result = await self.engine.execute_signal({
+            'action': 'set_stop_loss_take_profit',
+            'symbol': signal_symbol,
+            'stop_loss': signal_sl,
+            'take_profit': signal_tp,
+        })
+
+        if result.get('success'):
+            cprint(f"✅ 止损止盈更新成功", "green")
+        else:
+            cprint(f"❌ 止损止盈更新失败: {result.get('error')}", "red")
+
+        return {
+            'signal': signal,
+            'result': result,
+            'timestamp': datetime.now(),
+            'action_detail': 'update_sl_tp',
+        }
+
+    async def _reflect(self, state: TradingState) -> TradingState:
+        """反思学习 (TradingAgents.reflection_agent)"""
+        execution_results = state.execution_results or []
 
         if not execution_results:
-            return {
+            state.reflection = {
                 'reflection': "本次无交易执行，无需反思",
-                'lessons_learned': []
+                'lessons': [],
+                'quality_score': 50,
             }
+            return state
 
         cprint("\n" + "=" * 70, "magenta")
         cprint("🤔 反思本次决策...", "magenta")
@@ -293,355 +541,152 @@ class LearningGraph:
         # 获取账户信息
         account_info = await self._get_account_info()
 
-        # 构建反思提示（包含账户信息）
-        reflection_prompt = self._build_reflection_prompt(state, account_info)
+        # 使用 ReflectionAgent 进行反思
+        reflection = await self.agents.reflect(
+            decision=state.decision,
+            execution_results=execution_results,
+            account_info=account_info,
+            market_snapshot=state.market_snapshot,
+        )
 
-        # LLM反思
-        llm = self.decision_maker.llm
-        response = await llm.ainvoke([
-            {"role": "system", "content": "你是一个交易系统的反思模块，负责分析交易决策和结果，提取经验教训。"},
-            {"role": "user", "content": reflection_prompt}
-        ])
+        state.reflection = reflection
 
-        reflection_text = response.content
-        cprint(f"\n{reflection_text}\n", "white")
-
-        # 提取经验教训
-        lessons = self._extract_lessons(reflection_text)
+        cprint(f"\n{reflection.get('reflection', '')}\n", "white")
 
         cprint("=" * 70, "magenta")
         cprint("✅ 反思完成", "magenta")
-        if lessons:
-            cprint(f"   学到了 {len(lessons)} 条经验", "magenta")
+        if reflection.get('lessons'):
+            cprint(f"   学到了 {len(reflection['lessons'])} 条经验", "magenta")
+        cprint(f"   决策质量: {reflection.get('quality_score', 50)}/100", "magenta")
         cprint("=" * 70, "magenta")
 
-        return {
-            'reflection': reflection_text,
-            'lessons_learned': lessons
-        }
+        return state
 
-    async def _get_account_info(self) -> dict:
-        """获取账户信息（用于反思和总结）"""
+    async def _get_account_info(self) -> Optional[Dict]:
+        """获取账户信息"""
         try:
-            # 1. 获取账户余额
             balance = await self.engine.adapter.get_balance()
-
-            # 2. 获取交易统计数据
             stats = self.engine.trade_history.get_statistics()
+            positions = await self.engine.adapter.get_positions()
 
-            # 3. 获取当前持仓（从 adapter 获取实时持仓，包含 unrealized_pnl）
-            open_positions = await self.engine.adapter.get_positions()
-
-            # 4. 格式化持仓数据（包含未实现盈亏）
             positions_data = []
-            for pos in open_positions:
+            for pos in positions:
                 positions_data.append({
                     'symbol': pos.symbol,
                     'side': pos.side.value if hasattr(pos.side, 'value') else str(pos.side),
                     'unrealized_pnl': float(pos.unrealized_pnl) if pos.unrealized_pnl else 0,
                     'entry_price': float(pos.entry_price),
-                    'amount': float(pos.amount)
+                    'amount': float(pos.amount),
                 })
 
             return {
                 'balance': {
                     'total': float(balance.total),
                     'available': float(balance.available),
-                    'frozen': float(balance.frozen)
+                    'frozen': float(balance.frozen),
                 },
                 'statistics': stats,
-                'open_positions': positions_data
+                'open_positions': positions_data,
             }
         except Exception as e:
             cprint(f"⚠️  获取账户信息失败: {e}", "yellow")
             return None
 
-    async def _update_memory(self, state: TradingState) -> Dict[str, Any]:
-        """更新记忆库（Layer 3）"""
+    async def _update_memory(self, state: TradingState) -> TradingState:
+        """更新记忆 (TradingMemory)"""
         cprint("\n💾 更新记忆库...", "cyan")
 
-        # 序列化 execution_results，将复杂对象转换为字典
-        execution_results = state.get('execution_results', [])
+        # 序列化执行结果
+        execution_results = state.execution_results or []
         serializable_results = []
 
         for result in execution_results:
-            # 处理 result 字段 - 可能是 dict 或 ExecutionResult 对象
-            result_data = result['result']
+            result_data = result.get('result', {})
             if hasattr(result_data, 'model_dump'):
-                # ExecutionResult 对象，使用 Pydantic 的 model_dump
                 result_dict = result_data.model_dump(mode='json')
             elif isinstance(result_data, dict):
-                # 已经是字典，检查是否包含 ExecutionResult 对象
-                result_dict = {}
-                for key, value in result_data.items():
-                    if hasattr(value, 'model_dump'):
-                        result_dict[key] = value.model_dump(mode='json')
-                    else:
-                        result_dict[key] = value
+                result_dict = {
+                    k: (v.model_dump(mode='json') if hasattr(v, 'model_dump') else v)
+                    for k, v in result_data.items()
+                }
             else:
                 result_dict = {'raw': str(result_data)}
 
-            serializable_result = {
-                'signal': {
-                    'action': result['signal'].action,
-                    'symbol': result['signal'].symbol,
-                    'amount': float(result['signal'].amount) if result['signal'].amount else None,
-                    'leverage': result['signal'].leverage,
-                    'stop_loss': float(result['signal'].stop_loss) if result['signal'].stop_loss else None,
-                    'take_profit': float(result['signal'].take_profit) if result['signal'].take_profit else None,
-                    'confidence': result['signal'].confidence,
-                    'reason': result['signal'].reason,
+            signal = result.get('signal', {})
+            serializable_results.append({
+                'signal': signal if isinstance(signal, dict) else {
+                    'action': getattr(signal, 'action', 'N/A'),
+                    'symbol': getattr(signal, 'symbol', ''),
                 },
                 'result': result_dict,
-                'timestamp': result['timestamp'].isoformat()
-            }
-            serializable_results.append(serializable_result)
+                'timestamp': result.get('timestamp', datetime.now()).isoformat(),
+            })
 
         # 创建交易案例
+        reflection = state.reflection or {}
         case = TradingCase(
-            market_conditions=state['market_snapshot'].to_dict() if state.get('market_snapshot') else {},
-            decision=state['decision'].analysis if state.get('decision') else "",
+            market_conditions=state.market_snapshot.to_dict() if state.market_snapshot else {},
+            decision=state.decision.get('analysis', '') if state.decision else '',
             execution_result=serializable_results,
-            reflection=state.get('reflection'),
-            lessons_learned=state.get('lessons_learned', []),
-            timestamp=state.get('timestamp', datetime.now())
+            reflection=reflection.get('reflection', ''),
+            lessons_learned=reflection.get('lessons', []),
+            timestamp=state.timestamp,
         )
 
-        # 添加到记忆（后台异步执行，避免阻塞）
+        # 添加到 TradingMemory (后台执行)
         asyncio.create_task(self._save_case_background(case))
 
-        cprint(f"✅ 案例已提交保存（后台执行）: {case.case_id}", "green")
+        cprint(f"✅ 案例已提交保存: {case.case_id}", "green")
 
-        return {}
-
-    @staticmethod
-    def _build_reflection_prompt(state: TradingState, account_info: dict = None) -> str:
-        """构建反思提示"""
-        lines = [
-            "请反思以下交易过程：",
-            "",
-            "## 账户状态"
-        ]
-
-        # 添加账户信息
-        if account_info:
-            balance = account_info.get('balance', {})
-            stats = account_info.get('statistics', {})
-            positions = account_info.get('open_positions', [])
-
-            lines.append(f"- 账户余额: ${balance.get('total', 0):.2f}")
-            lines.append(f"- 可用资金: ${balance.get('available', 0):.2f}")
-            lines.append(f"- 冻结保证金: ${balance.get('frozen', 0):.2f}")
-
-            if stats:
-                lines.append(f"- 累计平仓次数: {stats.get('total_positions', 0)} 次")
-                lines.append(f"  - 盈利次数: {stats.get('win_count', 0)} 次")
-                lines.append(f"  - 亏损次数: {stats.get('loss_count', 0)} 次")
-                lines.append(f"  - 胜率: {stats.get('win_rate', 0) * 100:.1f}%")
-                lines.append(f"- 已实现总盈亏: ${stats.get('total_pnl', 0):.2f}")
-                lines.append(f"  - 最大盈利: ${stats.get('max_profit', 0):.2f}")
-                lines.append(f"  - 最大亏损: ${stats.get('max_loss', 0):.2f}")
-
-            if positions:
-                unrealized_total = sum(float(p.get('unrealized_pnl', 0)) for p in positions)
-                lines.append(f"- 当前持仓: {len(positions)} 个")
-                lines.append(f"- 未实现盈亏: ${unrealized_total:.2f}")
-                for pos in positions:
-                    side_name = "做多" if pos.get('side') == 'long' else "做空"
-                    lines.append(f"  - {pos.get('symbol')}: {side_name}, 盈亏 ${pos.get('unrealized_pnl', 0):.2f}")
-        else:
-            lines.append("（账户信息获取失败）")
-
-        lines.extend([
-            "",
-            "## 市场条件",
-            state['market_snapshot'].to_text() if state.get('market_snapshot') else "N/A",
-            "",
-            "## 决策",
-            state['decision'].analysis if state.get('decision') else "N/A",
-            "",
-            "## 执行结果"
-        ])
-
-        for result in state.get('execution_results', []):
-            signal = result['signal']
-            lines.append(f"- {signal.action} {signal.symbol}: {'成功' if result['result'].get('success') else '失败'}")
-            if not result['result'].get('success'):
-                lines.append(f"  错误: {result['result'].get('error')}")
-
-        lines.append("")
-        lines.append("## 请分析：")
-        lines.append("1. 结合账户状态，这次决策合理吗？")
-        lines.append("2. 当前盈亏情况如何影响下次决策？")
-        lines.append("3. 学到了什么经验？（请用简短的一句话总结，每条经验单独一行）")
-
-        return "\n".join(lines)
-
-    @staticmethod
-    def _extract_lessons(reflection_text: str) -> List[str]:
-        """从反思文本中提取经验教训"""
-        lessons = []
-
-        # 简单的文本解析
-        lines = reflection_text.split('\n')
-        in_lessons_section = False
-
-        for line in lines:
-            line = line.strip()
-            if '学到' in line or '经验' in line or 'lesson' in line.lower():
-                in_lessons_section = True
-                continue
-
-            if in_lessons_section and line:
-                # 提取列表项
-                if line.startswith('-') or line.startswith('*') or line.startswith('•'):
-                    lesson = line.lstrip('-*• ').strip()
-                    if lesson:
-                        lessons.append(lesson)
-                elif line[0].isdigit() and '.' in line[:3]:
-                    lesson = line.split('.', 1)[1].strip()
-                    if lesson:
-                        lessons.append(lesson)
-
-        return lessons[:5]  # 最多保留5条
-
-    async def _ensure_graph_initialized(self):
-        """确保 graph 已初始化（异步）"""
-        if self.graph is None:
-            import aiosqlite
-
-            # 创建异步 SQLite 连接（独立的 checkpoint 数据库）
-            conn = await aiosqlite.connect(self.checkpoint_db, timeout=30.0)
-
-            # 启用 WAL 模式以支持并发读写
-            await conn.execute('PRAGMA journal_mode=WAL')
-            await conn.execute('PRAGMA busy_timeout=30000')  # 30秒
-            await conn.commit()
-
-            self._checkpointer = AsyncSqliteSaver(conn)
-
-            # 编译 graph
-            workflow = self._build_graph()
-            self.graph = workflow.compile(checkpointer=self._checkpointer)
-
-            cprint(f"✅ Graph 和 Checkpointer (AsyncSqliteSaver) 初始化完成: {self.checkpoint_db}", "green")
-
-    async def run_iteration(self, symbols: List[str], iteration: int = 0):
-        """运行一次迭代"""
-        # 确保 graph 已初始化
-        await self._ensure_graph_initialized()
-
-        initial_state = {
-            'symbols': symbols,
-            'iteration': iteration,
-            'timestamp': datetime.now(),
-        }
-
-        config = {"configurable": {"thread_id": "trading_thread"}}
-
-        try:
-            result = await self.graph.ainvoke(initial_state, config)
-            return result
-        except Exception as e:
-            cprint(f"❌ 迭代执行失败: {e}", "red")
-            import traceback
-            traceback.print_exc()
-            return None
+        return state
 
     async def _save_case_background(self, case: TradingCase):
-        """后台保存案例（避免阻塞主流程）"""
+        """后台保存案例"""
         try:
-            # 在线程池中执行同步的 add_case
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, self.memory.add_case, case)
-
             cprint(f"✅ 案例保存成功: {case.case_id}", "green")
 
-            # 保存成功后，检查是否需要生成摘要
+            # 检查是否需要生成摘要
             await self._check_and_generate_summary()
 
         except Exception as e:
             cprint(f"⚠️  案例保存失败: {e}", "red")
-            # 失败不影响主流程，只记录错误
 
     async def _check_and_generate_summary(self):
-        """
-        智能检查是否需要生成摘要
-
-        触发条件（满足任一即触发）：
-        1. 首次摘要：累积 20 个案例
-        2. 时间周期：距离上次摘要 ≥ 7 天（且有至少 10 个新案例）
-        3. 案例数量：每 50 个案例
-        """
+        """检查是否需要生成摘要"""
         try:
-            stats = self.memory._get_db_stats()
-            cases_count = stats['cases_count']
+            stats = self.memory.get_statistics()
+            recent_cases = stats.get('recent_cases', 0)
 
-            # 获取最近的摘要
-            recent_summaries = self.memory._get_recent_summaries(limit=1)
-
-            should_generate = False
-            reason = ""
-
-            if not recent_summaries:
-                # 首次摘要：累积 20 个案例
-                if cases_count >= 20:
-                    should_generate = True
-                    reason = f"首次摘要（累积 {cases_count} 个案例）"
-            else:
-                last_summary = recent_summaries[0]
-                days_since = (datetime.now() - last_summary.period_end).days
-                cases_since = cases_count - last_summary.total_cases
-
-                # 条件1：时间周期（7天）
-                if days_since >= 7 and cases_since >= 10:
-                    should_generate = True
-                    reason = f"距离上次摘要 {days_since} 天（新增 {cases_since} 个案例）"
-
-                # 条件2：案例数阈值（每50个）
-                elif cases_count > 0 and cases_count % 50 == 0:
-                    should_generate = True
-                    reason = f"案例数达到 {cases_count}"
-
-            if should_generate:
-                cprint(f"\n📝 触发摘要生成: {reason}", "yellow")
+            # 每20个案例或每周生成摘要
+            if recent_cases > 0 and recent_cases % 20 == 0:
+                cprint(f"\n📝 触发摘要生成 (案例数: {recent_cases})", "yellow")
                 await self._generate_summary_background()
 
         except Exception as e:
-            # 静默失败，不影响主流程
             cprint(f"⚠️  摘要检查失败: {e}", "red")
 
     async def _generate_summary_background(self):
-        """后台生成摘要（不阻塞主流程）"""
+        """后台生成摘要"""
         try:
-            cprint("🔄 开始生成摘要（后台任务）...", "cyan")
-
-            # 获取账户信息
+            cprint("🔄 开始生成摘要...", "cyan")
             account_info = await self._get_account_info()
-
-            # 生成摘要（包含账户信息）
-            summary = await self.memory.generate_weekly_summary(account_info)
+            summary = await self.memory.generate_summary(account_info)
 
             if summary:
-                cprint(f"✅ 摘要生成完成: {summary.summary_id}", "green")
-                cprint(f"   覆盖案例: {summary.total_cases} 个", "green")
-                cprint(f"   真实交易: {summary.total_trades} 笔", "green")
-                cprint(f"   关键模式: {len(summary.key_patterns)} 条", "green")
-                cprint(f"   成功策略: {len(summary.successful_strategies)} 条", "green")
-                cprint(f"   核心经验: {len(summary.lessons)} 条", "green")
+                cprint("✅ 摘要生成完成", "green")
             else:
-                cprint("ℹ️  案例数不足，跳过摘要生成", "yellow")
+                cprint("ℹ️  案例数不足，跳过摘要", "yellow")
 
         except Exception as e:
             cprint(f"❌ 摘要生成失败: {e}", "red")
-            import traceback
-            traceback.print_exc()
 
     async def run_loop(
         self,
         symbols: List[str],
         interval_seconds: int = 180,
-        max_iterations: Optional[int] = None
+        max_iterations: Optional[int] = None,
     ):
         """运行交易循环"""
         iteration = 0
@@ -658,7 +703,6 @@ class LearningGraph:
                     break
 
                 await self.run_iteration(symbols, iteration)
-
                 iteration += 1
 
                 if max_iterations is None or iteration < max_iterations:
@@ -672,3 +716,7 @@ class LearningGraph:
             raise
         finally:
             cprint("\n👋 交易系统已停止\n", "yellow")
+
+
+# 为了向后兼容，保留旧的 TradingWorkflow 名称
+TradingWorkflow = LearningGraph

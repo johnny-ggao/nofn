@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-NoFn Trading System - Main Entry Point (New Architecture)
+NoFn Trading System - Main Entry Point
 
-三层架构:
+完全基于 Agno 的三层架构:
 - Layer 1: TradingEngine (执行层) - 快速、确定性
-- Layer 2: DecisionMaker (决策层) - LLM推理
-- Layer 3: LearningGraph (学习层) - 记忆、反思、优化
+- Layer 2: TradingAgents (决策层) - Agno Agent 集合
+- Layer 3: LearningGraph (学习层) - Agno 原生记忆和工作流
 """
 import asyncio
 import sys
@@ -19,8 +19,8 @@ from src.utils.config import config
 sys.path.insert(0, str(Path(__file__).parent))
 
 
-async def run_new_architecture():
-    """运行新架构的交易系统"""
+async def run_trading_system():
+    """运行基于 Agno 的交易系统"""
     # 读取配置
     strategy_config = config.strategy
     llm_config = config.get_llm_config()
@@ -36,50 +36,63 @@ async def run_new_architecture():
     cprint(f"LLM: {llm_config.provider} ({llm_config.model})", "cyan")
     cprint("=" * 70, "cyan")
 
-    # 初始化组件
+    adapter = None
+
     try:
         # Layer 1: 执行层
-        from src.adapters import HyperliquidAdapter
+        from src.adapters import HyperliquidAdapter, BinanceAdapter
         from src.engine import TradingEngine
         from src.models import TradeHistoryManager
 
         exchange_config = config.get_exchange_config(exchange)
-        adapter = HyperliquidAdapter(
-            api_key=exchange_config.api_key,
-            api_secret=exchange_config.api_secret,
-            testnet=exchange_config.testnet,
-        )
+
+        # 根据配置的交易所创建对应的适配器
+        if exchange.lower() == "hyperliquid":
+            adapter = HyperliquidAdapter(
+                api_key=exchange_config.api_key,
+                api_secret=exchange_config.api_secret,
+                testnet=exchange_config.testnet,
+            )
+        elif exchange.lower() in ["binance", "binance_usdt"]:
+            adapter = BinanceAdapter(
+                api_key=exchange_config.api_key,
+                api_secret=exchange_config.api_secret,
+                margin_type="USDT",
+                testnet=exchange_config.testnet,
+            )
+        elif exchange.lower() == "binance_usdc":
+            adapter = BinanceAdapter(
+                api_key=exchange_config.api_key,
+                api_secret=exchange_config.api_secret,
+                margin_type="USDC",
+                testnet=exchange_config.testnet,
+            )
+        else:
+            raise ValueError(f"不支持的交易所: {exchange}，支持: hyperliquid, binance, binance_usdt, binance_usdc")
+
         await adapter.initialize()
 
         trade_history = TradeHistoryManager()
-
         engine = TradingEngine(adapter=adapter, trade_history=trade_history)
-        cprint("✅ Layer 1 (执行层) 初始化完成", "green")
+        cprint("✅ Layer 1 初始化完成", "green")
 
-        # Layer 2: 决策层
-        from langchain_openai import ChatOpenAI
-        from src.decision import DecisionMaker
+        # Layer 2 & 3: 决策层和学习层
+        from src.learning import LearningGraph
 
-        llm = ChatOpenAI(
-            model=llm_config.model,
-            temperature=llm_config.temperature,
-            api_key=llm_config.api_key,
-            base_url=llm_config.base_url,
-        )
+        # 获取系统提示词路径
+        system_prompt_path = str(Path(__file__).parent / "src" / "prompts" / "nofn_v2.txt")
 
-        decision_maker = DecisionMaker(llm=llm)
-        cprint("✅ Layer 2 (决策层) 初始化完成", "green")
-
-        # Layer 3: 学习层
-        from src.learning import LearningGraph, MemoryManager
-
-        memory_manager = MemoryManager(llm=llm)  # 默认: data/memory.db
         learning_graph = LearningGraph(
             engine=engine,
-            decision_maker=decision_maker,
-            memory_manager=memory_manager
+            db_path="data/agno_trading.db",
+            model_provider=llm_config.provider,
+            model_id=llm_config.model,
+            api_key=llm_config.api_key,
+            base_url=llm_config.base_url,
+            temperature=llm_config.temperature,
+            system_prompt_path=system_prompt_path,
         )
-        cprint("✅ Layer 3 (学习层) 初始化完成", "green")
+        cprint("✅ Layer 2 & 3 (决策层 + 学习层) 初始化完成", "green")
 
         cprint("\n" + "🚀" * 35, "green")
         cprint("🚀 所有组件初始化完成，开始交易循环！", "green")
@@ -103,16 +116,17 @@ async def run_new_architecture():
         traceback.print_exc()
 
     finally:
-        try:
-            await adapter.close()
-        except:
-            pass
+        if adapter:
+            try:
+                await adapter.close()
+            except Exception:
+                pass
         cprint("👋 系统已停止", "yellow")
 
 
 async def main():
     """主入口"""
-    await run_new_architecture()
+    await run_trading_system()
 
 
 if __name__ == "__main__":

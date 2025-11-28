@@ -1,14 +1,16 @@
 """
 决策引擎 (Layer 2)
 
-LLM驱动的市场分析和交易决策
+使用 Agno Agent 进行 LLM 驱动的市场分析和交易决策
 """
 import json
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from dataclasses import dataclass
 from datetime import datetime
 
-from langchain_openai import ChatOpenAI
+from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+from agno.models.anthropic import Claude
 from termcolor import cprint
 
 from ..engine.market_snapshot import MarketSnapshot
@@ -42,7 +44,7 @@ class Decision:
 
 class DecisionMaker:
     """
-    决策引擎
+    决策引擎 (使用 Agno Agent)
 
     职责:
     1. 接收预处理的市场快照
@@ -56,13 +58,41 @@ class DecisionMaker:
     - 订单执行（由Layer 1负责）
     """
 
-    def __init__(self, llm: ChatOpenAI):
-        self.llm = llm
-
+    def __init__(
+        self,
+        model_provider: str = "openai",
+        model_id: str = "gpt-4o-mini",
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        temperature: float = 0.7,
+    ):
         # 加载系统提示词
         from pathlib import Path
         prompt_path = Path(__file__).parent.parent / "prompts" / "nofn_v2.txt"
         self.system_prompt = prompt_path.read_text(encoding="utf-8")
+
+        # 创建 Agno 模型
+        if model_provider == "anthropic":
+            self.model = Claude(
+                id=model_id,
+                api_key=api_key,
+            )
+        else:
+            # 默认使用 OpenAI 兼容接口
+            self.model = OpenAIChat(
+                id=model_id,
+                api_key=api_key,
+                base_url=base_url,
+                temperature=temperature,
+            )
+
+        # 创建 Agno Agent
+        self.agent = Agent(
+            name="TradingDecisionAgent",
+            model=self.model,
+            instructions=[self.system_prompt],
+            markdown=False,  # 我们需要 JSON 输出
+        )
 
     async def analyze_and_decide(
         self,
@@ -92,15 +122,9 @@ class DecisionMaker:
             # 构建完整的上下文
             context = self._build_context(market_snapshot, memory_context)
 
-            # 构建消息
-            messages = [
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": context}
-            ]
-
-            # LLM推理
-            response = await self.llm.ainvoke(messages)
-            response_text = response.content
+            # 使用 Agno Agent 进行推理
+            response = await self.agent.arun(context)
+            response_text = response.content if hasattr(response, 'content') else str(response)
 
             cprint(f"\n{response_text}\n", "white")
 
@@ -124,7 +148,6 @@ class DecisionMaker:
                 analysis=f"Error occurred: {str(e)}",
                 timestamp=datetime.now()
             )
-
 
     def _build_context(self, snapshot: MarketSnapshot, memory: Optional[str]) -> str:
         """

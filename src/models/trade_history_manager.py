@@ -494,7 +494,7 @@ class TradeHistoryManager:
 
     def get_statistics(self, days: Optional[int] = None) -> dict:
         """
-        获取统计数据
+        获取统计数据（含夏普率等风险调整指标）
 
         Args:
             days: 统计最近N天，None表示全部
@@ -502,6 +502,8 @@ class TradeHistoryManager:
         Returns:
             dict: 统计结果
         """
+        import math
+
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -512,6 +514,8 @@ class TradeHistoryManager:
             cutoff = (datetime.now() - timedelta(days=days)).isoformat()
             query += " AND close_time >= ?"
             params.append(cutoff)
+
+        query += " ORDER BY close_time ASC"  # 按时间排序用于计算回撤
 
         cursor.execute(query, params)
         closed_positions = cursor.fetchall()
@@ -527,6 +531,16 @@ class TradeHistoryManager:
                 'max_profit': 0.0,
                 'max_loss': 0.0,
                 'avg_holding_time_hours': 0.0,
+                # 夏普率相关
+                'sharpe_ratio': 0.0,
+                'sortino_ratio': 0.0,
+                'profit_factor': 0.0,
+                'max_drawdown': 0.0,
+                'max_drawdown_percent': 0.0,
+                'avg_win': 0.0,
+                'avg_loss': 0.0,
+                'expectancy': 0.0,
+                'risk_reward_ratio': 0.0,
             }
 
         # 计算统计
@@ -538,6 +552,76 @@ class TradeHistoryManager:
         max_profit = max(pnls) if pnls else 0.0
         max_loss = min(pnls) if pnls else 0.0
 
+        # 盈利和亏损交易分别统计
+        wins = [p for p in pnls if p > 0]
+        losses = [p for p in pnls if p < 0]
+        avg_win = sum(wins) / len(wins) if wins else 0.0
+        avg_loss = abs(sum(losses) / len(losses)) if losses else 0.0
+
+        # 盈亏比（风险回报比）
+        risk_reward_ratio = avg_win / avg_loss if avg_loss > 0 else 0.0
+
+        # 利润因子（总盈利/总亏损）
+        total_profit = sum(wins) if wins else 0.0
+        total_loss = abs(sum(losses)) if losses else 0.0
+        profit_factor = total_profit / total_loss if total_loss > 0 else 0.0
+
+        # 期望值 = (胜率 * 平均盈利) - ((1 - 胜率) * 平均亏损)
+        win_rate = win_count / len(closed_positions) if closed_positions else 0.0
+        expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+
+        # ========== 夏普率计算 ==========
+        # 使用每笔交易的收益率（假设年化，252个交易日）
+        sharpe_ratio = 0.0
+        sortino_ratio = 0.0
+
+        if len(pnls) >= 2:
+            # 计算收益率
+            returns = pnls  # 直接使用 PnL 作为收益
+
+            # 平均收益和标准差
+            avg_return = sum(returns) / len(returns)
+            variance = sum((r - avg_return) ** 2 for r in returns) / len(returns)
+            std_dev = math.sqrt(variance) if variance > 0 else 0.0
+
+            # 夏普率 (假设无风险利率为0，年化因子根据交易频率调整)
+            if std_dev > 0:
+                # 简化版：不做年化，直接用平均收益/标准差
+                sharpe_ratio = avg_return / std_dev
+
+            # 索提诺比率（只考虑下行风险）
+            downside_returns = [r for r in returns if r < 0]
+            if downside_returns:
+                downside_variance = sum(r ** 2 for r in downside_returns) / len(returns)
+                downside_std = math.sqrt(downside_variance) if downside_variance > 0 else 0.0
+                if downside_std > 0:
+                    sortino_ratio = avg_return / downside_std
+
+        # ========== 最大回撤计算 ==========
+        max_drawdown = 0.0
+        max_drawdown_percent = 0.0
+
+        if pnls:
+            # 累计盈亏曲线
+            cumulative_pnl = []
+            running_pnl = 0.0
+            for pnl in pnls:
+                running_pnl += pnl
+                cumulative_pnl.append(running_pnl)
+
+            # 计算最大回撤
+            peak = cumulative_pnl[0]
+            for value in cumulative_pnl:
+                if value > peak:
+                    peak = value
+                drawdown = peak - value
+                if drawdown > max_drawdown:
+                    max_drawdown = drawdown
+
+            # 回撤百分比（相对于峰值）
+            if peak > 0:
+                max_drawdown_percent = (max_drawdown / peak) * 100
+
         # 平均持仓时间
         holding_times = []
         for p in closed_positions:
@@ -548,15 +632,27 @@ class TradeHistoryManager:
                 holding_times.append(hours)
 
         return {
+            # 基础统计
             'total_positions': len(closed_positions),
             'win_count': win_count,
             'loss_count': loss_count,
-            'win_rate': win_count / len(closed_positions) if closed_positions else 0.0,
+            'win_rate': win_rate,
             'total_pnl': total_pnl,
             'avg_pnl': total_pnl / len(closed_positions) if closed_positions else 0.0,
             'max_profit': max_profit,
             'max_loss': max_loss,
             'avg_holding_time_hours': sum(holding_times) / len(holding_times) if holding_times else 0.0,
+            # 风险调整指标
+            'sharpe_ratio': round(sharpe_ratio, 3),
+            'sortino_ratio': round(sortino_ratio, 3),
+            'profit_factor': round(profit_factor, 3),
+            'max_drawdown': round(max_drawdown, 2),
+            'max_drawdown_percent': round(max_drawdown_percent, 2),
+            # 盈亏分析
+            'avg_win': round(avg_win, 2),
+            'avg_loss': round(avg_loss, 2),
+            'expectancy': round(expectancy, 2),
+            'risk_reward_ratio': round(risk_reward_ratio, 3),
         }
 
     def _row_to_trade(self, row: sqlite3.Row) -> TradeRecord:

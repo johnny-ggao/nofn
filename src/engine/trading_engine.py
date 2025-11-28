@@ -112,16 +112,17 @@ class TradingEngine:
     async def _get_asset_data(self, symbol: str) -> Optional[AssetData]:
         """获取单个资产的完整数据"""
         try:
-            # 并发获取价格、K线（5分钟+4小时）、持仓、资金费率、持仓量
+            # 并发获取价格、K线（15分钟、1小时、4小时）、持仓、资金费率、持仓量
             price_task = self.adapter.get_latest_price(symbol)
-            candles_5m_task = self.adapter.get_candles(symbol, '5m', limit=200)  # 5分钟K线用于入场判断
-            candles_4h_task = self.adapter.get_candles(symbol, '4h', limit=200)  # 4小时K线用于大趋势判断
+            candles_15m_task = self.adapter.get_candles(symbol, '15m', limit=100)  # 15分钟K线 - 精确入场
+            candles_1h_task = self.adapter.get_candles(symbol, '1h', limit=100)    # 1小时K线 - 入场时机
+            candles_4h_task = self.adapter.get_candles(symbol, '4h', limit=200)    # 4小时K线 - 趋势确认
             position_task = self.adapter.get_position(symbol)
             funding_rate_task = self.adapter.get_funding_rate(symbol)
             open_interest_task = self.adapter.get_open_interest(symbol)
 
-            price, candles_5m, candles_4h, position, funding_rate_data, open_interest = await asyncio.gather(
-                price_task, candles_5m_task, candles_4h_task, position_task, funding_rate_task, open_interest_task,
+            price, candles_15m, candles_1h, candles_4h, position, funding_rate_data, open_interest = await asyncio.gather(
+                price_task, candles_15m_task, candles_1h_task, candles_4h_task, position_task, funding_rate_task, open_interest_task,
                 return_exceptions=True
             )
 
@@ -129,17 +130,40 @@ class TradingEngine:
             if isinstance(price, Exception):
                 cprint(f"⚠️  {symbol} 价格获取失败: {price}", "yellow")
                 return None
-            if isinstance(candles_5m, Exception):
-                cprint(f"⚠️  {symbol} 5分钟K线获取失败: {candles_5m}", "yellow")
-                candles_5m = []
+            if isinstance(candles_15m, Exception):
+                cprint(f"⚠️  {symbol} 15分钟K线获取失败: {candles_15m}", "yellow")
+                candles_15m = []
+            if isinstance(candles_1h, Exception):
+                cprint(f"⚠️  {symbol} 1小时K线获取失败: {candles_1h}", "yellow")
+                candles_1h = []
             if isinstance(candles_4h, Exception):
                 cprint(f"⚠️  {symbol} 4小时K线获取失败: {candles_4h}", "yellow")
                 candles_4h = []
 
-            # 计算 5 分钟级别技术指标（入场信号）
-            indicators_5m = self._calculate_indicators(candles_5m) if candles_5m else IndicatorData()
+            current_price = float(price.last_price)
 
-            # 计算 4 小时级别技术指标（大趋势判断）
+            # 延迟导入以避免循环依赖
+            from ..utils.mtf_calculator import MTFCalculator
+
+            # 计算多时间框架指标
+            tf_4h = None
+            tf_1h = None
+            tf_15m = None
+
+            if candles_4h and len(candles_4h) >= 50:
+                ohlcv_4h = self._candles_to_ohlcv(candles_4h)
+                tf_4h = MTFCalculator.calculate_4h(ohlcv_4h, current_price)
+
+            if candles_1h and len(candles_1h) >= 50:
+                ohlcv_1h = self._candles_to_ohlcv(candles_1h)
+                tf_1h = MTFCalculator.calculate_1h(ohlcv_1h, current_price)
+
+            if candles_15m and len(candles_15m) >= 20:
+                ohlcv_15m = self._candles_to_ohlcv(candles_15m)
+                tf_15m = MTFCalculator.calculate_15m(ohlcv_15m, current_price)
+
+            # 旧版指标（向后兼容）- 使用1小时数据
+            indicators_5m = self._calculate_indicators(candles_1h) if candles_1h else IndicatorData()
             indicators_4h = self._calculate_indicators(candles_4h) if candles_4h else None
 
             # 提取市场情绪指标（独立于时间框架）
@@ -182,6 +206,11 @@ class TradingEngine:
                 mark_price=price.mark_price,
                 bid=price.bid_price,
                 ask=price.ask_price,
+                # 多时间框架指标
+                tf_4h=tf_4h,
+                tf_1h=tf_1h,
+                tf_15m=tf_15m,
+                # 旧版指标（向后兼容）
                 indicators=indicators_5m,
                 indicators_4h=indicators_4h,
                 funding_rate=funding_rate_val,
@@ -202,6 +231,18 @@ class TradingEngine:
         except Exception as e:
             cprint(f"❌ 获取 {symbol} 数据失败: {e}", "red")
             return None
+
+    @staticmethod
+    def _candles_to_ohlcv(candles: List[Candle]):
+        """将Candle列表转换为OHLCVData"""
+        from ..utils.mtf_calculator import OHLCVData
+        return OHLCVData(
+            open=[float(c.open) for c in candles],
+            high=[float(c.high) for c in candles],
+            low=[float(c.low) for c in candles],
+            close=[float(c.close) for c in candles],
+            volume=[float(c.volume) for c in candles],
+        )
 
     @staticmethod
     def _calculate_indicators(candles: List[Candle]) -> IndicatorData:

@@ -1,20 +1,22 @@
 """
-学习层 (Layer 3)
+学习层 (Layer 3) - 完全基于 Agno
 
-LangGraph驱动的学习和进化系统
-- SqliteSaver Checkpointer（状态持久化、断点恢复）
-- MemoryManager（SQLite 记忆管理 - 相似度匹配）
-- 反思学习（Reflection）
-- 策略优化（Optimization）
+使用 Agno 的原生能力实现学习和进化系统：
+- LearningGraph: 交易学习工作流
+- TradingAgents: 专用的决策和反思 Agent
+- TradingMemory: 基于 Agno 的记忆系统
 
 这是系统"智能"的核心
 """
-from .learning_graph import LearningGraph, TradingState
-from .memory_manager import MemoryManager, TradingCase
+from .learning_graph import LearningGraph, TradingState, TradingWorkflow
+from .trading_memory import TradingMemory, TradingCase
+from .agents import TradingAgents
 
 __all__ = [
     'LearningGraph',
+    'TradingWorkflow',
     'TradingState',
-    'MemoryManager',
+    'TradingMemory',
+    'TradingAgents',
     'TradingCase',
 ]
