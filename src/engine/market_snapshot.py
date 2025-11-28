@@ -88,6 +88,13 @@ class TimeframeIndicators:
     volume_ma: Optional[float] = None   # 成交量均线
     volume_ratio: Optional[float] = None  # 当前成交量/均线
 
+    # ========== 持仓量指标 (OI - Open Interest) ==========
+    # 仅在4小时级别使用，作为市场情绪指标
+    oi_current: Optional[float] = None  # 当前持仓量 (USD)
+    oi_change_4h: Optional[float] = None  # 4小时持仓量变化率 (%)
+    oi_change_24h: Optional[float] = None  # 24小时持仓量变化率 (%)
+    oi_series: Optional[List[float]] = None  # 持仓量序列 (最近N个4小时数据)
+
     # ========== 序列数据（最近N个点）==========
     prices_series: Optional[List[float]] = None
     ema8_series: Optional[List[float]] = None
@@ -133,6 +140,11 @@ class TimeframeIndicators:
                 'roc': self.volume_roc,
                 'ma': self.volume_ma,
                 'ratio': self.volume_ratio,
+            },
+            'open_interest': {
+                'current': self.oi_current,
+                'change_4h': self.oi_change_4h,
+                'change_24h': self.oi_change_24h,
             },
         }
 

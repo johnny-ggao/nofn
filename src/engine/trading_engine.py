@@ -112,7 +112,7 @@ class TradingEngine:
     async def _get_asset_data(self, symbol: str) -> Optional[AssetData]:
         """获取单个资产的完整数据"""
         try:
-            # 并发获取价格、K线（15分钟、1小时、4小时）、持仓、资金费率、持仓量
+            # 并发获取价格、K线（15分钟、1小时、4小时）、持仓、资金费率、持仓量、持仓量历史
             price_task = self.adapter.get_latest_price(symbol)
             candles_15m_task = self.adapter.get_candles(symbol, '15m', limit=100)  # 15分钟K线 - 精确入场
             candles_1h_task = self.adapter.get_candles(symbol, '1h', limit=100)    # 1小时K线 - 入场时机
@@ -121,10 +121,29 @@ class TradingEngine:
             funding_rate_task = self.adapter.get_funding_rate(symbol)
             open_interest_task = self.adapter.get_open_interest(symbol)
 
-            price, candles_15m, candles_1h, candles_4h, position, funding_rate_data, open_interest = await asyncio.gather(
-                price_task, candles_15m_task, candles_1h_task, candles_4h_task, position_task, funding_rate_task, open_interest_task,
-                return_exceptions=True
-            )
+            # 获取持仓量历史（4小时周期，用于计算变化率）
+            # 需要检查 adapter 是否支持此方法
+            oi_history_task = None
+            if hasattr(self.adapter, 'get_open_interest_history'):
+                oi_history_task = self.adapter.get_open_interest_history(symbol, period='4h', limit=10)
+
+            tasks = [
+                price_task, candles_15m_task, candles_1h_task, candles_4h_task,
+                position_task, funding_rate_task, open_interest_task
+            ]
+            if oi_history_task:
+                tasks.append(oi_history_task)
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            price = results[0]
+            candles_15m = results[1]
+            candles_1h = results[2]
+            candles_4h = results[3]
+            position = results[4]
+            funding_rate_data = results[5]
+            open_interest = results[6]
+            oi_history = results[7] if len(results) > 7 else []
 
             # 处理异常
             if isinstance(price, Exception):
@@ -153,6 +172,10 @@ class TradingEngine:
             if candles_4h and len(candles_4h) >= 50:
                 ohlcv_4h = self._candles_to_ohlcv(candles_4h)
                 tf_4h = MTFCalculator.calculate_4h(ohlcv_4h, current_price)
+
+                # 添加 OI 指标到 4H 时间框架
+                if tf_4h and not isinstance(oi_history, Exception) and oi_history:
+                    self._add_oi_indicators(tf_4h, oi_history)
 
             if candles_1h and len(candles_1h) >= 50:
                 ohlcv_1h = self._candles_to_ohlcv(candles_1h)
@@ -308,6 +331,47 @@ class TradingEngine:
         except Exception as e:
             cprint(f"⚠️  指标计算失败: {e}", "yellow")
             return IndicatorData()
+
+    @staticmethod
+    def _add_oi_indicators(tf_4h, oi_history: List[Dict]) -> None:
+        """
+        将持仓量指标添加到4小时时间框架
+
+        计算:
+        - oi_current: 当前持仓量 (USD)
+        - oi_change_4h: 4小时持仓量变化率 (%)
+        - oi_change_24h: 24小时持仓量变化率 (%)
+        - oi_series: 持仓量序列
+
+        Args:
+            tf_4h: TimeframeIndicators 对象
+            oi_history: 持仓量历史数据列表 (按时间排序，最新在后)
+        """
+        if not oi_history or len(oi_history) < 2:
+            return
+
+        try:
+            # 提取 OI 值序列 (sum_open_interest_value 是 USD 价值)
+            oi_values = [item.get('sum_open_interest_value', 0) for item in oi_history]
+
+            # 当前持仓量 (最新值)
+            tf_4h.oi_current = oi_values[-1] if oi_values else None
+
+            # 4小时变化率 (最新 vs 上一个4小时)
+            if len(oi_values) >= 2 and oi_values[-2] > 0:
+                change_4h = ((oi_values[-1] - oi_values[-2]) / oi_values[-2]) * 100
+                tf_4h.oi_change_4h = round(change_4h, 2)
+
+            # 24小时变化率 (需要6个4小时数据点)
+            if len(oi_values) >= 7 and oi_values[-7] > 0:
+                change_24h = ((oi_values[-1] - oi_values[-7]) / oi_values[-7]) * 100
+                tf_4h.oi_change_24h = round(change_24h, 2)
+
+            # 保存序列数据
+            tf_4h.oi_series = oi_values[-10:] if len(oi_values) >= 10 else oi_values
+
+        except Exception as e:
+            cprint(f"⚠️  OI指标计算失败: {e}", "yellow")
 
     async def _get_account_data(self) -> dict:
         """获取账户数据"""

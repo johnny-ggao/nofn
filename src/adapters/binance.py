@@ -809,6 +809,62 @@ class BinanceAdapter(BaseExchangeAdapter):
             cprint(f"⚠️  获取持仓量失败 ({symbol}): {str(e)}", "yellow")
             return None
 
+    async def get_open_interest_history(
+        self,
+        symbol: str,
+        period: str = "4h",
+        limit: int = 30,
+        **params
+    ) -> List[Dict[str, Any]]:
+        """
+        获取持仓量历史数据
+
+        Args:
+            symbol: 交易对 (如 "BTC/USDT:USDT" 或 "BTCUSDT")
+            period: 时间周期 ("5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d")
+            limit: 返回数据条数 (默认30，最大500)
+
+        Returns:
+            List[Dict]: 持仓量历史数据列表
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "sumOpenInterest": "12345.67",  # 持仓量 (合约数量)
+                    "sumOpenInterestValue": "1234567890.12",  # 持仓量价值 (USD)
+                    "timestamp": 1699876800000
+                },
+                ...
+            ]
+        """
+        try:
+            # 将 symbol 转换为 Binance 原生格式 (如 BTCUSDT)
+            symbol = self._normalize_symbol(symbol)
+            # 从 "BTC/USDT:USDT" 提取 "BTCUSDT"
+            base_symbol = symbol.replace("/", "").replace(":USDT", "").replace(":USDC", "")
+
+            # 直接调用 Binance Futures API
+            response = await self._exchange.fapiDataGetOpenInterestHist({
+                'symbol': base_symbol,
+                'period': period,
+                'limit': limit,
+            })
+
+            # 解析返回数据
+            result = []
+            for item in response:
+                result.append({
+                    'symbol': item.get('symbol'),
+                    'sum_open_interest': float(item.get('sumOpenInterest', 0)),
+                    'sum_open_interest_value': float(item.get('sumOpenInterestValue', 0)),
+                    'timestamp': int(item.get('timestamp', 0)),
+                })
+
+            return result
+
+        except Exception as e:
+            cprint(f"⚠️  获取持仓量历史失败 ({symbol}): {str(e)}", "yellow")
+            return []
+
     async def get_latest_price(
         self,
         symbol: str,
