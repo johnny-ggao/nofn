@@ -544,6 +544,35 @@ class TradingEngine:
                 else:
                     return {'success': False, 'error': 'Position not found'}
 
+            elif action == 'hold':
+                # hold 操作：维持现有仓位，可选更新止损止盈
+                position = await self.adapter.get_position(symbol)
+                if position:
+                    # 如果提供了止损止盈，则更新
+                    if signal.get('stop_loss') or signal.get('take_profit'):
+                        result = await self.adapter.modify_stop_loss_take_profit(
+                            position=position.model_dump(),
+                            stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
+                            take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None
+                        )
+
+                        if result.status.value == 'success' and self.trade_history:
+                            self.trade_history.update_position_sl_tp(
+                                symbol=symbol,
+                                stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
+                                take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
+                            )
+
+                        return {'success': result.status.value == 'success', 'result': result, 'message': 'Position held, SL/TP updated'}
+                    else:
+                        return {'success': True, 'message': 'Position held, no changes'}
+                else:
+                    return {'success': True, 'message': 'No position to hold'}
+
+            elif action == 'wait':
+                # wait 操作：不做任何交易，直接返回成功
+                return {'success': True, 'message': 'Waiting, no action taken'}
+
             else:
                 return {'success': False, 'error': f'Unknown action: {action}'}
 

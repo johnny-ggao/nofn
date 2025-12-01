@@ -327,11 +327,15 @@ class TradingWorkflowGraph:
         decision = state.get('decision', {})
         evaluation = state.get('evaluation', {})
 
+        # 序列化执行结果（将 Pydantic 模型转换为字典）
+        execution_results = state.get('execution_results', [])
+        serialized_results = self._serialize_execution_results(execution_results)
+
         # 创建交易案例
         case = TradingCase(
             market_conditions=snapshot.to_dict() if snapshot else {},
             decision=decision.get('analysis', ''),
-            execution_result=state.get('execution_results', []),
+            execution_result=serialized_results,
             reflection=evaluation.get('analysis', ''),
             lessons_learned=state.get('lessons_learned', []),
             quality_score=state.get('quality_score'),
@@ -431,6 +435,58 @@ class TradingWorkflowGraph:
         except Exception as e:
             cprint(f"⚠️  获取账户信息失败: {e}", "yellow")
             return None
+
+    @staticmethod
+    def _serialize_execution_results(results: list) -> list:
+        """
+        序列化执行结果，将 Pydantic 模型转换为字典
+
+        Args:
+            results: 执行结果列表
+
+        Returns:
+            可 JSON 序列化的结果列表
+        """
+        serialized = []
+        for item in results:
+            serialized_item = {}
+
+            # 处理 signal
+            if 'signal' in item:
+                serialized_item['signal'] = item['signal']
+
+            # 处理 result（可能包含 ExecutionResult 对象）
+            if 'result' in item:
+                result = item['result']
+                if isinstance(result, dict):
+                    # 递归处理嵌套的 Pydantic 模型
+                    serialized_result = {}
+                    for key, value in result.items():
+                        if hasattr(value, 'model_dump'):
+                            # Pydantic 模型转换为字典
+                            serialized_result[key] = value.model_dump(mode='json')
+                        elif hasattr(value, 'dict'):
+                            # 旧版 Pydantic 模型
+                            serialized_result[key] = value.dict()
+                        else:
+                            serialized_result[key] = value
+                    serialized_item['result'] = serialized_result
+                elif hasattr(result, 'model_dump'):
+                    serialized_item['result'] = result.model_dump(mode='json')
+                else:
+                    serialized_item['result'] = result
+
+            # 处理 timestamp
+            if 'timestamp' in item:
+                ts = item['timestamp']
+                if hasattr(ts, 'isoformat'):
+                    serialized_item['timestamp'] = ts.isoformat()
+                else:
+                    serialized_item['timestamp'] = str(ts)
+
+            serialized.append(serialized_item)
+
+        return serialized
 
     @staticmethod
     def _print_market_data(snapshot: MarketSnapshot) -> None:
