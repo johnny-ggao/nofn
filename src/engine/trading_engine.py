@@ -550,24 +550,47 @@ class TradingEngine:
                 # hold 操作：维持现有仓位，可选更新止损止盈
                 position = await self.adapter.get_position(symbol)
                 if position:
-                    # 如果提供了止损止盈，则更新
-                    if signal.get('stop_loss') or signal.get('take_profit'):
+                    # 如果提供了止损止盈，检查是否需要更新
+                    new_sl = Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None
+                    new_tp = Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None
+
+                    # 获取当前止损止盈（容差比较，避免浮点精度问题）
+                    current_sl = position.stop_loss
+                    current_tp = position.take_profit
+
+                    def is_price_different(new_price: Decimal | None, current_price: Decimal | None, tolerance: float = 0.01) -> bool:
+                        """检查价格是否有显著变化（超过容差百分比）"""
+                        if new_price is None and current_price is None:
+                            return False
+                        if new_price is None or current_price is None:
+                            return True
+                        if current_price == 0:
+                            return new_price != 0
+                        diff_percent = abs(float(new_price - current_price) / float(current_price)) * 100
+                        return diff_percent > tolerance
+
+                    sl_changed = is_price_different(new_sl, current_sl)
+                    tp_changed = is_price_different(new_tp, current_tp)
+
+                    if sl_changed or tp_changed:
+                        cprint(f"  📝 更新止损止盈: SL {current_sl} → {new_sl}, TP {current_tp} → {new_tp}", "cyan")
                         result = await self.adapter.modify_stop_loss_take_profit(
                             position=position.model_dump(),
-                            stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
-                            take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None
+                            stop_loss=new_sl,
+                            take_profit=new_tp
                         )
 
                         if result.status.value == 'success' and self.trade_history:
                             self.trade_history.update_position_sl_tp(
                                 symbol=symbol,
-                                stop_loss=Decimal(str(signal['stop_loss'])) if signal.get('stop_loss') else None,
-                                take_profit=Decimal(str(signal['take_profit'])) if signal.get('take_profit') else None,
+                                stop_loss=new_sl,
+                                take_profit=new_tp,
                             )
 
                         return {'success': result.status.value == 'success', 'result': result, 'message': 'Position held, SL/TP updated'}
                     else:
-                        return {'success': True, 'message': 'Position held, no changes'}
+                        cprint(f"  ℹ️ 止损止盈无变化，跳过更新", "yellow")
+                        return {'success': True, 'message': 'Position held, SL/TP unchanged'}
                 else:
                     return {'success': True, 'message': 'No position to hold'}
 

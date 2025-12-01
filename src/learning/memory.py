@@ -138,15 +138,20 @@ class TradingCase:
 
 class TradingMemory:
     """
-    交易记忆系统 (基于 SQLAlchemy)
+    交易记忆系统 (基于 SQLAlchemy + ChromaDB 向量搜索)
 
-    使用标准 SQL 数据库存储交易案例，易于理解和自定义
+    使用 SQL 数据库存储交易案例，ChromaDB 进行向量相似度搜索
     """
 
     def __init__(
         self,
         db_path: str = "data/trading_memory.db",
         user_id: str = "default_user",
+        vector_store_dir: str = "data/vector_store",
+        embedding_provider: str = "dashscope",
+        embedding_api_key: Optional[str] = None,
+        embedding_model: Optional[str] = None,
+        enable_vector_search: bool = True,
     ):
         """
         初始化记忆系统
@@ -154,9 +159,15 @@ class TradingMemory:
         Args:
             db_path: 数据库文件路径
             user_id: 用户 ID
+            vector_store_dir: 向量存储目录
+            embedding_provider: Embedding 提供商 (dashscope, openai, ollama)
+            embedding_api_key: Embedding API Key
+            embedding_model: Embedding 模型名称 (可选，使用默认值)
+            enable_vector_search: 是否启用向量搜索
         """
         self.db_path = db_path
         self.user_id = user_id
+        self.enable_vector_search = enable_vector_search
 
         # 创建数据库目录
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -170,14 +181,34 @@ class TradingMemory:
         # 创建 Session 工厂
         self.SessionLocal = sessionmaker(bind=self.engine)
 
+        # 初始化向量存储（可选）
+        self.vector_store = None
+        if enable_vector_search and embedding_api_key:
+            try:
+                from .vector_store import TradingVectorStore
+                self.vector_store = TradingVectorStore(
+                    persist_dir=vector_store_dir,
+                    collection_name=f"trading_cases_{user_id}",
+                    embedding_provider=embedding_provider,
+                    embedding_api_key=embedding_api_key,
+                    embedding_model=embedding_model,
+                )
+            except Exception as e:
+                cprint(f"⚠️ 向量存储初始化失败，降级为时间排序: {e}", "yellow")
+                self.vector_store = None
+
         cprint(f"✅ TradingMemory 初始化完成 (数据库: {db_path})", "green")
+        if self.vector_store:
+            cprint(f"   向量搜索: 已启用 (ChromaDB)", "green")
+        else:
+            cprint(f"   向量搜索: 未启用 (使用时间排序)", "yellow")
 
     def _get_session(self) -> Session:
         """获取数据库会话"""
         return self.SessionLocal()
 
     def add_case(self, case: TradingCase) -> None:
-        """添加交易案例"""
+        """添加交易案例（同时保存到 SQL 和向量存储）"""
         session = self._get_session()
         try:
             case_model = TradingCaseModel(
@@ -193,7 +224,23 @@ class TradingMemory:
             )
             session.add(case_model)
             session.commit()
-            cprint(f"✅ 案例已保存: {case.case_id}", "green")
+            cprint(f"✅ 案例已保存到 SQL: {case.case_id}", "green")
+
+            # 同步添加到向量存储
+            if self.vector_store:
+                try:
+                    self.vector_store.add_case(
+                        case_id=case.case_id,
+                        market_conditions=case.market_conditions,
+                        decision=case.decision,
+                        lessons_learned=case.lessons_learned,
+                        quality_score=case.quality_score,
+                        realized_pnl=case.realized_pnl,
+                        reflection=case.reflection,
+                    )
+                except Exception as ve:
+                    cprint(f"⚠️ 向量存储保存失败: {ve}", "yellow")
+
         except Exception as e:
             session.rollback()
             cprint(f"❌ 保存案例失败: {e}", "red")
@@ -221,9 +268,45 @@ class TradingMemory:
         """
         搜索相似案例
 
-        注意：这是一个简化版本，仅返回最近的案例
-        如果需要真正的相似度搜索，应该使用向量数据库
+        如果启用了向量存储，使用向量相似度搜索
+        否则降级为按时间排序的最近案例
         """
+        # 优先使用向量搜索
+        if self.vector_store:
+            try:
+                similar_results = self.vector_store.search_similar(
+                    market_conditions=market_conditions,
+                    limit=limit,
+                    min_score=0.3,  # 最小相似度阈值
+                )
+
+                if similar_results:
+                    # 从 SQL 数据库获取完整案例数据
+                    cases = []
+                    session = self._get_session()
+                    try:
+                        for result in similar_results:
+                            case_id = result['case_id']
+                            case_model = session.query(TradingCaseModel).filter(
+                                TradingCaseModel.case_id == case_id
+                            ).first()
+
+                            if case_model:
+                                case = self._model_to_case(case_model)
+                                # 附加相似度信息
+                                case.similarity = result.get('similarity', 0)
+                                cases.append(case)
+                    finally:
+                        session.close()
+
+                    if cases:
+                        cprint(f"🔍 向量搜索找到 {len(cases)} 个相似案例", "cyan")
+                        return cases
+
+            except Exception as e:
+                cprint(f"⚠️ 向量搜索失败，降级为时间排序: {e}", "yellow")
+
+        # 降级：返回最近的案例
         return self.get_recent_cases(limit=limit, days=30)
 
     def get_context(

@@ -49,10 +49,15 @@ class TradingWorkflowGraph:
         """
         self.engine = engine
 
-        # 初始化记忆系统
+        # 初始化记忆系统（支持向量搜索）
         self.memory = TradingMemory(
             db_path=db_path,
             user_id="nofn_trading",
+            vector_store_dir="data/vector_store",
+            embedding_provider=llm_config.embedding_provider or llm_config.provider,
+            embedding_api_key=llm_config.embedding_api_key or llm_config.api_key,
+            embedding_model=llm_config.embedding_model,
+            enable_vector_search=True,
         )
 
         # 初始化 Trading Agent
@@ -190,6 +195,7 @@ class TradingWorkflowGraph:
 
         if similar:
             cprint(f"✅ 找到 {len(similar)} 个相似案例", "green")
+            self._print_historical_cases(similar)
         else:
             cprint("ℹ️ 没有找到相似案例", "yellow")
 
@@ -197,6 +203,54 @@ class TradingWorkflowGraph:
             'memory_context': memory_context,
             'similar_cases': [c.to_dict() for c in similar],
         }
+
+    def _print_historical_cases(self, cases: list) -> None:
+        """打印历史案例详情"""
+        cprint("\n" + "-" * 50, "cyan")
+        cprint("📚 历史案例与经验教训", "cyan")
+        cprint("-" * 50, "cyan")
+
+        for i, case in enumerate(cases, 1):
+            # 案例标题
+            timestamp_str = case.timestamp.strftime('%Y-%m-%d %H:%M') if case.timestamp else 'N/A'
+            cprint(f"\n[案例 {i}] {case.case_id}", "white", attrs=["bold"])
+            cprint(f"  时间: {timestamp_str}", "white")
+
+            # 相似度（如果有）
+            similarity = getattr(case, 'similarity', None)
+            if similarity is not None:
+                sim_percent = similarity * 100
+                sim_color = "green" if sim_percent >= 70 else ("yellow" if sim_percent >= 50 else "white")
+                cprint(f"  相似度: {sim_percent:.1f}%", sim_color)
+
+            # 质量评分
+            if case.quality_score is not None:
+                score_color = "green" if case.quality_score >= 70 else ("yellow" if case.quality_score >= 50 else "red")
+                cprint(f"  质量评分: {case.quality_score}/100", score_color)
+
+            # 已实现盈亏
+            if case.realized_pnl is not None:
+                pnl_color = "green" if case.realized_pnl >= 0 else "red"
+                pnl_sign = "+" if case.realized_pnl >= 0 else ""
+                cprint(f"  盈亏: {pnl_sign}${case.realized_pnl:.2f}", pnl_color)
+
+            # 决策摘要
+            if case.decision:
+                decision_summary = case.decision[:100] + "..." if len(case.decision) > 100 else case.decision
+                cprint(f"  决策: {decision_summary}", "white")
+
+            # 反思/评估
+            if case.reflection:
+                reflection_summary = case.reflection[:100] + "..." if len(case.reflection) > 100 else case.reflection
+                cprint(f"  评估: {reflection_summary}", "magenta")
+
+            # 经验教训
+            if case.lessons_learned:
+                cprint("  经验教训:", "yellow")
+                for lesson in case.lessons_learned[:3]:  # 最多显示3条
+                    cprint(f"    • {lesson}", "yellow")
+
+        cprint("\n" + "-" * 50, "cyan")
 
     async def make_decision(self, state: TradingState) -> dict:
         """节点4: 做出交易决策"""
