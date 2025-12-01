@@ -413,7 +413,7 @@ class EventFactory:
         """反思已完成"""
         return SystemEvent(
             event_type=SystemEventType.REFLECTION_COMPLETED,
-            component="learning",
+            component="trading",
             message=f"Reflection completed: {len(lessons_learned)} lessons from {trade_count} trades",
             details={
                 "lessons_learned": lessons_learned,

@@ -233,6 +233,11 @@ class Trade(BaseModel):
     amount: Decimal = Field(..., description="成交数量")
     price: Decimal = Field(..., description="成交价格")
 
+    # 开仓/平仓信息
+    trade_type: Optional[str] = Field(None, description="交易类型: open(开仓), close(平仓), add(加仓), reduce(减仓)")
+    closed_pnl: Optional[Decimal] = Field(None, description="平仓盈亏（仅平仓时有值）")
+    start_position: Optional[Decimal] = Field(None, description="成交前持仓量")
+
     # 费用
     fee: Optional[Decimal] = Field(None, description="手续费")
     fee_currency: Optional[str] = Field(None, description="手续费币种")

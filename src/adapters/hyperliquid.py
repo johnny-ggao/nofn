@@ -1,7 +1,7 @@
 """
 Hyperliquid 交易所适配器 - 优化重构版
 """
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable, Awaitable
 from decimal import Decimal
 import decimal
 from datetime import datetime
@@ -13,6 +13,7 @@ import eth_account
 from termcolor import cprint
 
 from .base import BaseExchangeAdapter
+from .hyperliquid_websocket import HyperliquidWebSocketManager
 from ..models import (
     Position,
     ExecutionResult,
@@ -29,6 +30,10 @@ from ..models import (
     Order,
     Trade,
     OrderStatus,
+    OrderUpdateEvent,
+    PositionUpdateEvent,
+    TradeUpdateEvent,
+    AccountUpdateEvent,
 )
 
 
@@ -48,6 +53,7 @@ class HyperliquidAdapter(BaseExchangeAdapter):
         super().__init__(api_key, api_secret, **kwargs)
         self._hl_exchange = None
         self._hl_info = None
+        self._ws_manager: Optional[HyperliquidWebSocketManager] = None
 
     # ==================== 第1部分: 初始化和连接管理 ====================
 
@@ -86,13 +92,23 @@ class HyperliquidAdapter(BaseExchangeAdapter):
             )
 
             # 3. 初始化 Hyperliquid Info API
-            self._hl_info = Info(base_url=base_url, skip_ws=True)
+            self._hl_info = Info(base_url=base_url, skip_ws=False)  # 允许 WebSocket
+
+            # 4. 创建 WebSocket 管理器（但不自动订阅）
+            self._ws_manager = HyperliquidWebSocketManager(
+                hl_info=self._hl_info,
+                user_address=self.api_key,
+            )
 
         except Exception as e:
             raise ConnectionError(f"Hyperliquid 初始化失败: {str(e)}")
 
     async def close(self) -> None:
         """关闭交易所连接"""
+        # 取消 WebSocket 订阅
+        if self._ws_manager:
+            await self._ws_manager.unsubscribe()
+
         if self._exchange:
             await self._exchange.close()
 
@@ -553,11 +569,13 @@ class HyperliquidAdapter(BaseExchangeAdapter):
     ) -> List[Trade]:
         """获取历史成交记录"""
         try:
+            # Hyperliquid 的 fetch_my_trades 需要 symbol 参数
+            # user 参数应该使用 walletAddress
             trades_data = await self._exchange.fetch_my_trades(
                 symbol=symbol,
                 since=since,
                 limit=limit,
-                params={'user': self._exchange.apiKey, **params}
+                params={'user': self.api_key, **params}  # api_key 就是 walletAddress
             )
 
             return [self._parse_trade(trade_dict) for trade_dict in trades_data]
@@ -1039,6 +1057,14 @@ class HyperliquidAdapter(BaseExchangeAdapter):
         side = PositionSide.LONG if trade_dict.get('side') == 'buy' else PositionSide.SHORT
         fee_cost, fee_currency = self._parse_fee(trade_dict.get('fee'))
 
+        # 从 info 中提取开平仓信息 (Hyperliquid 特有)
+        info = trade_dict.get('info', {})
+        start_position = self._safe_decimal_optional(info.get('startPosition'))
+        closed_pnl = self._safe_decimal_optional(info.get('closedPnl'))
+
+        # 判断交易类型
+        trade_type = self._determine_trade_type(start_position, closed_pnl, side)
+
         return Trade(
             trade_id=str(trade_dict.get('id', '')),
             order_id=str(trade_dict.get('order', '')),
@@ -1046,12 +1072,45 @@ class HyperliquidAdapter(BaseExchangeAdapter):
             side=side,
             amount=self._safe_decimal(trade_dict.get('amount')),
             price=self._safe_decimal(trade_dict.get('price')),
+            trade_type=trade_type,
+            closed_pnl=closed_pnl,
+            start_position=start_position,
             fee=fee_cost,
             fee_currency=fee_currency,
             is_maker=trade_dict.get('takerOrMaker') == 'maker' if trade_dict.get('takerOrMaker') else None,
             timestamp=datetime.fromtimestamp(trade_dict['timestamp'] / 1000) if trade_dict.get('timestamp') else datetime.now(),
             raw_data=trade_dict,
         )
+
+    @staticmethod
+    def _determine_trade_type(
+        start_position: Optional[Decimal],
+        closed_pnl: Optional[Decimal],
+        side: PositionSide
+    ) -> str:
+        """
+        判断交易类型：开仓、平仓、加仓、减仓
+
+        逻辑：
+        - startPosition 为 0 或 None -> 开仓
+        - closedPnl 不为 0 -> 平仓（有盈亏说明是平仓）
+        - startPosition 不为 0 且方向相同 -> 加仓
+        - startPosition 不为 0 且方向相反 -> 减仓/平仓
+        """
+        if start_position is None or start_position == 0:
+            return "open"
+
+        if closed_pnl is not None and closed_pnl != 0:
+            return "close"
+
+        # 有持仓的情况下，根据方向判断
+        # startPosition > 0 表示多仓，< 0 表示空仓
+        if start_position > 0:
+            # 原来是多仓
+            return "add" if side == PositionSide.LONG else "reduce"
+        else:
+            # 原来是空仓
+            return "add" if side == PositionSide.SHORT else "reduce"
 
     @staticmethod
     def _parse_order_status(order_dict: Dict[str, Any]) -> OrderStatus:

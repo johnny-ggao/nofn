@@ -4,7 +4,7 @@
 定义所有交易所适配器必须实现的接口，确保不同交易所的统一调用方式
 """
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, Callable, Awaitable
 from decimal import Decimal
 
 from ..models import (
@@ -21,6 +21,10 @@ from ..models import (
     OrderBook,
     Order,
     Trade,
+    OrderUpdateEvent,
+    PositionUpdateEvent,
+    TradeUpdateEvent,
+    AccountUpdateEvent,
 )
 
 
@@ -438,6 +442,48 @@ class BaseExchangeAdapter(ABC):
             OrderBook: 订单簿数据
         """
         pass
+
+    # ========== WebSocket 订阅 (可选) ==========
+
+    async def subscribe_user_updates(
+        self,
+        on_order_update: Optional[Callable[[OrderUpdateEvent], Awaitable[None]]] = None,
+        on_position_update: Optional[Callable[[PositionUpdateEvent], Awaitable[None]]] = None,
+        on_trade_update: Optional[Callable[[TradeUpdateEvent], Awaitable[None]]] = None,
+        on_account_update: Optional[Callable[[AccountUpdateEvent], Awaitable[None]]] = None,
+        **params
+    ) -> bool:
+        """
+        订阅用户数据更新（WebSocket）
+
+        订阅用户的订单、仓位、成交、账户等实时更新。
+        这是一个可选方法，不是所有交易所都需要实现。
+
+        Args:
+            on_order_update: 订单更新回调
+            on_position_update: 仓位更新回调
+            on_trade_update: 成交更新回调
+            on_account_update: 账户更新回调
+            **params: 其他参数
+
+        Returns:
+            bool: 是否订阅成功
+
+        Note:
+            - 默认实现返回 False（不支持）
+            - 支持 WebSocket 的交易所应重写此方法
+            - 回调函数应该是异步的 (async def)
+        """
+        return False
+
+    async def unsubscribe_user_updates(self, **params) -> bool:
+        """
+        取消订阅用户数据更新
+
+        Returns:
+            bool: 是否取消成功
+        """
+        return False
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}>"

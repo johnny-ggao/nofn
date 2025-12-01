@@ -1,30 +1,23 @@
 """
 交易所适配器模块
 
-提供多交易所的统一接口和管理：
+提供多交易所的统一接口：
 - BaseExchangeAdapter: 适配器基类
 - HyperliquidAdapter: Hyperliquid 永续合约
 - BinanceAdapter: Binance 永续合约 (USDT-M / USDC-M)
-- AdapterManager: 适配器管理器
+- AdapterFactory: 适配器工厂
 """
 from .base import BaseExchangeAdapter
 from .hyperliquid import HyperliquidAdapter
 from .binance import BinanceAdapter
-from .manager import (
-    AdapterManager,
-    AdapterCapability,
-    AdapterContext,
-    get_adapter_manager,
-)
+from .factory import AdapterFactory, create_adapter
 
 __all__ = [
     # 适配器
     "BaseExchangeAdapter",
     "HyperliquidAdapter",
     "BinanceAdapter",
-    # 管理器
-    "AdapterManager",
-    "AdapterCapability",
-    "AdapterContext",
-    "get_adapter_manager",
+    # 工厂
+    "AdapterFactory",
+    "create_adapter",
 ]

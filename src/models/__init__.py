@@ -42,6 +42,14 @@ from .trade_history import (
 from .trade_history_manager import (
     TradeHistoryManager,
 )
+from .websocket_events import (
+    WebSocketEventType,
+    StopTriggerReason,
+    OrderUpdateEvent,
+    PositionUpdateEvent,
+    TradeUpdateEvent,
+    AccountUpdateEvent,
+)
 
 __all__ = [
     # Enums
@@ -78,4 +86,11 @@ __all__ = [
     "TradeRecord",
     "PositionRecord",
     "TradeHistoryManager",
+    # WebSocket Events
+    "WebSocketEventType",
+    "StopTriggerReason",
+    "OrderUpdateEvent",
+    "PositionUpdateEvent",
+    "TradeUpdateEvent",
+    "AccountUpdateEvent",
 ]
