@@ -181,7 +181,7 @@ class AdapterFactory:
             elif name_lower == "binance_usdt":
                 effective_margin_type = "USDT"
             else:
-                effective_margin_type = margin_type or "USDT"
+                effective_margin_type = margin_type or "USDC"
 
             return BinanceAdapter(
                 api_key=api_key,

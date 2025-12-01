@@ -4,9 +4,9 @@
 用于在执行层和决策层之间传递预处理的市场数据
 
 多时间框架分析:
-- 4小时: 确认趋势方向
-- 1小时: 确认入场时机
-- 15分钟: 确认精确入场点
+- 1小时: 确认趋势方向
+- 15分钟: 确认入场时机
+- 5分钟: 确认精确入场点
 """
 from typing import Dict, List, Optional
 from decimal import Decimal
@@ -17,9 +17,9 @@ from enum import Enum
 
 class Timeframe(str, Enum):
     """时间框架"""
-    M15 = "15m"   # 15分钟 - 精确入场
-    H1 = "1h"     # 1小时 - 入场时机
-    H4 = "4h"     # 4小时 - 趋势确认
+    M5 = "5m"     # 5分钟 - 精确入场
+    M15 = "15m"   # 15分钟 - 入场时机
+    H1 = "1h"     # 1小时 - 趋势确认
 
 
 @dataclass
@@ -27,15 +27,15 @@ class TimeframeIndicators:
     """
     单一时间框架的指标数据
 
-    4小时级别指标:
-    - EMA(8, 21, 50, 200): 判断趋势方向和多空排列
+    1小时级别指标 (趋势确认):
+    - EMA(8, 21, 50): 判断趋势方向和多空排列
     - MACD(6, 13, 5): 识别趋势转折点和动量变化
     - RSI(14): 判断超买(>70)、超卖(<30)状态
     - ADX(14) + DI: 判断趋势强度(ADX>25表示强趋势)
     - ATR(14): 衡量市场波动性，计算止损距离
     - BB(20, 2): 判断价格波动区间和超买超卖
 
-    1小时级别指标:
+    15分钟级别指标 (入场时机):
     - EMA(8, 21, 50)
     - RSI(14)
     - MACD(6, 13, 5)
@@ -43,7 +43,7 @@ class TimeframeIndicators:
     - Volume ROC(5): 确认价格变动是否有成交量支撑
     - ATR(14)
 
-    15分钟级别指标:
+    5分钟级别指标 (精确入场):
     - EMA(8): 快速均线
     - RSI(9): 更敏感的参数
     - MACD(5, 10, 3): 超快速参数
@@ -55,7 +55,6 @@ class TimeframeIndicators:
     ema8: Optional[float] = None
     ema21: Optional[float] = None
     ema50: Optional[float] = None
-    ema200: Optional[float] = None
 
     # ========== MACD ==========
     macd_value: Optional[float] = None
@@ -110,7 +109,6 @@ class TimeframeIndicators:
                 'ema8': self.ema8,
                 'ema21': self.ema21,
                 'ema50': self.ema50,
-                'ema200': self.ema200,
             },
             'macd': {
                 'value': self.macd_value,
@@ -236,16 +234,16 @@ class AssetData:
     low_24h: Optional[Decimal] = None
 
     # ========== 多时间框架指标 ==========
-    # 4小时级别 - 确认趋势方向
-    tf_4h: Optional[TimeframeIndicators] = None
-    # 1小时级别 - 确认入场时机
+    # 1小时级别 - 确认趋势方向
     tf_1h: Optional[TimeframeIndicators] = None
-    # 15分钟级别 - 精确入场点
+    # 15分钟级别 - 确认入场时机
     tf_15m: Optional[TimeframeIndicators] = None
+    # 5分钟级别 - 精确入场点
+    tf_5m: Optional[TimeframeIndicators] = None
 
     # 旧版指标 (向后兼容)
     indicators: IndicatorData = field(default_factory=IndicatorData)
-    indicators_4h: Optional[IndicatorData] = None
+    indicators_1h: Optional[IndicatorData] = None
 
     # 市场情绪指标（永续合约，独立于时间框架）
     funding_rate: Optional[float] = None  # 资金费率
@@ -279,26 +277,26 @@ class AssetData:
         """
         scores = []
 
-        # 4小时趋势权重最高
-        if self.tf_4h:
-            direction = self.tf_4h.get_trend_direction()
-            strength = self.tf_4h.get_trend_strength()
+        # 1小时趋势权重最高
+        if self.tf_1h:
+            direction = self.tf_1h.get_trend_direction()
+            strength = self.tf_1h.get_trend_strength()
             if direction == "bullish":
                 scores.append(2 if strength == "strong" else 1)
             elif direction == "bearish":
                 scores.append(-2 if strength == "strong" else -1)
 
-        # 1小时趋势
-        if self.tf_1h:
-            direction = self.tf_1h.get_trend_direction()
+        # 15分钟趋势
+        if self.tf_15m:
+            direction = self.tf_15m.get_trend_direction()
             if direction == "bullish":
                 scores.append(1)
             elif direction == "bearish":
                 scores.append(-1)
 
-        # 15分钟趋势
-        if self.tf_15m:
-            direction = self.tf_15m.get_trend_direction()
+        # 5分钟趋势
+        if self.tf_5m:
+            direction = self.tf_5m.get_trend_direction()
             if direction == "bullish":
                 scores.append(0.5)
             elif direction == "bearish":
@@ -336,14 +334,14 @@ class AssetData:
             },
             # 多时间框架指标
             'timeframes': {
-                '4h': self.tf_4h.to_dict() if self.tf_4h else None,
                 '1h': self.tf_1h.to_dict() if self.tf_1h else None,
                 '15m': self.tf_15m.to_dict() if self.tf_15m else None,
+                '5m': self.tf_5m.to_dict() if self.tf_5m else None,
             },
             'market_bias': self.get_market_bias(),
             # 旧版指标 (向后兼容)
             'indicators': self.indicators.to_dict(),
-            'indicators_4h': self.indicators_4h.to_dict() if self.indicators_4h else None,
+            'indicators_1h': self.indicators_1h.to_dict() if self.indicators_1h else None,
             'market_sentiment': {
                 'funding_rate': self.funding_rate,
                 'open_interest': self.open_interest,
@@ -383,10 +381,10 @@ class AssetData:
                 lines.append(f"- 资金费率: {fr_percent:+.4f}%")
             lines.append("")
 
-        # ========== 4小时级别 - 趋势确认 ==========
-        if self.tf_4h:
-            lines.append("**4小时级别 (趋势确认):**")
-            tf = self.tf_4h
+        # ========== 1小时级别 - 趋势确认 ==========
+        if self.tf_1h:
+            lines.append("**1小时级别 (趋势确认):**")
+            tf = self.tf_1h
             trend = tf.get_trend_direction()
             strength = tf.get_trend_strength()
             lines.append(f"- 趋势: {trend} ({strength})")
@@ -396,7 +394,6 @@ class AssetData:
             if tf.ema8: ema_parts.append(f"EMA8=${tf.ema8:.2f}")
             if tf.ema21: ema_parts.append(f"EMA21=${tf.ema21:.2f}")
             if tf.ema50: ema_parts.append(f"EMA50=${tf.ema50:.2f}")
-            if tf.ema200: ema_parts.append(f"EMA200=${tf.ema200:.2f}")
             if ema_parts:
                 lines.append(f"- EMA: {' > '.join(ema_parts)}")
 
@@ -426,10 +423,10 @@ class AssetData:
 
             lines.append("")
 
-        # ========== 1小时级别 - 入场时机 ==========
-        if self.tf_1h:
-            lines.append("**1小时级别 (入场时机):**")
-            tf = self.tf_1h
+        # ========== 15分钟级别 - 入场时机 ==========
+        if self.tf_15m:
+            lines.append("**15分钟级别 (入场时机):**")
+            tf = self.tf_15m
 
             # EMA
             ema_parts = []
@@ -464,10 +461,10 @@ class AssetData:
 
             lines.append("")
 
-        # ========== 15分钟级别 - 精确入场 ==========
-        if self.tf_15m:
-            lines.append("**15分钟级别 (精确入场):**")
-            tf = self.tf_15m
+        # ========== 5分钟级别 - 精确入场 ==========
+        if self.tf_5m:
+            lines.append("**5分钟级别 (精确入场):**")
+            tf = self.tf_5m
 
             # EMA8 快速均线
             if tf.ema8:

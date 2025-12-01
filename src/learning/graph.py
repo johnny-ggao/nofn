@@ -17,7 +17,7 @@ from ..utils.config import LLMConfig
 
 class TradingWorkflowGraph:
     """
-    交易工作流图 (基于 LangGraph)
+    交易工作流图
 
     使用 StateGraph 定义节点和边，清晰地展示工作流程：
     1. get_market_data -> 获取市场数据

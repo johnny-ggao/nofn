@@ -2,9 +2,9 @@
 多时间框架指标计算器 (Multi-Timeframe Calculator)
 
 根据不同时间框架计算相应的技术指标:
-- 4小时: 趋势确认
-- 1小时: 入场时机
-- 15分钟: 精确入场
+- 1小时: 趋势确认
+- 15分钟: 入场时机
+- 5分钟: 精确入场
 """
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
@@ -34,27 +34,27 @@ class MTFCalculator:
     用法:
         calculator = MTFCalculator()
 
-        # 计算4小时指标
-        tf_4h = calculator.calculate_4h(ohlcv_4h, current_price)
-
-        # 计算1小时指标
+        # 计算1小时指标 (趋势确认)
         tf_1h = calculator.calculate_1h(ohlcv_1h, current_price)
 
-        # 计算15分钟指标
+        # 计算15分钟指标 (入场时机)
         tf_15m = calculator.calculate_15m(ohlcv_15m, current_price)
+
+        # 计算5分钟指标 (精确入场)
+        tf_5m = calculator.calculate_5m(ohlcv_5m, current_price)
     """
 
     @staticmethod
-    def calculate_4h(
+    def calculate_1h(
         data: OHLCVData,
         current_price: float,
         series_length: int = 10
     ) -> TimeframeIndicators:
         """
-        计算4小时级别指标
+        计算1小时级别指标 (趋势确认)
 
         指标配置:
-        - EMA(8, 21, 50, 200): 判断趋势方向和多空排列
+        - EMA(8, 21, 50): 判断趋势方向和多空排列
         - MACD(6, 13, 5): 识别趋势转折点和动量变化
         - RSI(14): 判断超买(>70)、超卖(<30)状态
         - ADX(14) + DI: 判断趋势强度(ADX>25表示强趋势)
@@ -67,16 +67,16 @@ class MTFCalculator:
             series_length: 序列数据长度
 
         Returns:
-            TimeframeIndicators: 4小时级别指标
+            TimeframeIndicators: 1小时级别指标
         """
         closes = to_float_array(data.close)
         highs = to_float_array(data.high)
         lows = to_float_array(data.low)
         n = len(closes)
 
-        indicators = TimeframeIndicators(timeframe="4h")
+        indicators = TimeframeIndicators(timeframe="1h")
 
-        # EMA (8, 21, 50, 200)
+        # EMA (8, 21, 50)
         if n >= 8:
             ema8_arr = ema(closes, 8)
             indicators.ema8 = float(ema8_arr[-1]) if not np.isnan(ema8_arr[-1]) else None
@@ -91,10 +91,6 @@ class MTFCalculator:
             ema50_arr = ema(closes, 50)
             indicators.ema50 = float(ema50_arr[-1]) if not np.isnan(ema50_arr[-1]) else None
             indicators.ema50_series = _get_series(ema50_arr, series_length)
-
-        if n >= 200:
-            ema200_arr = ema(closes, 200)
-            indicators.ema200 = float(ema200_arr[-1]) if not np.isnan(ema200_arr[-1]) else None
 
         # MACD (6, 13, 5) - 快速参数
         if n >= 18:  # 13 + 5
@@ -138,13 +134,13 @@ class MTFCalculator:
         return indicators
 
     @staticmethod
-    def calculate_1h(
+    def calculate_15m(
         data: OHLCVData,
         current_price: float,
         series_length: int = 10
     ) -> TimeframeIndicators:
         """
-        计算1小时级别指标
+        计算15分钟级别指标 (入场时机)
 
         指标配置:
         - EMA(8, 21, 50)
@@ -160,7 +156,7 @@ class MTFCalculator:
             series_length: 序列数据长度
 
         Returns:
-            TimeframeIndicators: 1小时级别指标
+            TimeframeIndicators: 15分钟级别指标
         """
         closes = to_float_array(data.close)
         highs = to_float_array(data.high)
@@ -168,7 +164,7 @@ class MTFCalculator:
         volumes = to_float_array(data.volume)
         n = len(closes)
 
-        indicators = TimeframeIndicators(timeframe="1h")
+        indicators = TimeframeIndicators(timeframe="15m")
 
         # EMA (8, 21, 50)
         if n >= 8:
@@ -225,13 +221,13 @@ class MTFCalculator:
         return indicators
 
     @staticmethod
-    def calculate_15m(
+    def calculate_5m(
         data: OHLCVData,
         current_price: float,
         series_length: int = 10
     ) -> TimeframeIndicators:
         """
-        计算15分钟级别指标
+        计算5分钟级别指标 (精确入场)
 
         指标配置:
         - EMA(8): 快速均线
@@ -245,7 +241,7 @@ class MTFCalculator:
             series_length: 序列数据长度
 
         Returns:
-            TimeframeIndicators: 15分钟级别指标
+            TimeframeIndicators: 5分钟级别指标
         """
         closes = to_float_array(data.close)
         highs = to_float_array(data.high)
@@ -253,7 +249,7 @@ class MTFCalculator:
         volumes = to_float_array(data.volume)
         n = len(closes)
 
-        indicators = TimeframeIndicators(timeframe="15m")
+        indicators = TimeframeIndicators(timeframe="5m")
 
         # EMA (8) - 快速均线
         if n >= 8:
@@ -302,37 +298,37 @@ def _get_series(arr: np.ndarray, length: int) -> Optional[List[float]]:
 
 # 便捷函数
 def calculate_mtf_indicators(
-    ohlcv_4h: Optional[OHLCVData] = None,
     ohlcv_1h: Optional[OHLCVData] = None,
     ohlcv_15m: Optional[OHLCVData] = None,
+    ohlcv_5m: Optional[OHLCVData] = None,
     current_price: float = 0.0
 ) -> Dict[str, Optional[TimeframeIndicators]]:
     """
     一次性计算所有时间框架的指标
 
     Args:
-        ohlcv_4h: 4小时K线数据
         ohlcv_1h: 1小时K线数据
         ohlcv_15m: 15分钟K线数据
+        ohlcv_5m: 5分钟K线数据
         current_price: 当前价格
 
     Returns:
-        Dict: {"4h": ..., "1h": ..., "15m": ...}
+        Dict: {"1h": ..., "15m": ..., "5m": ...}
     """
     calculator = MTFCalculator()
     result = {
-        "4h": None,
         "1h": None,
         "15m": None,
+        "5m": None,
     }
-
-    if ohlcv_4h:
-        result["4h"] = calculator.calculate_4h(ohlcv_4h, current_price)
 
     if ohlcv_1h:
         result["1h"] = calculator.calculate_1h(ohlcv_1h, current_price)
 
     if ohlcv_15m:
         result["15m"] = calculator.calculate_15m(ohlcv_15m, current_price)
+
+    if ohlcv_5m:
+        result["5m"] = calculator.calculate_5m(ohlcv_5m, current_price)
 
     return result

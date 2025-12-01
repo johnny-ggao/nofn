@@ -53,7 +53,7 @@ class BinanceAdapter(BaseExchangeAdapter):
         self,
         api_key: str,
         api_secret: str,
-        margin_type: str = 'USDT',
+        margin_type: str = 'USDC',
         **kwargs
     ):
         """
@@ -1015,6 +1015,23 @@ class BinanceAdapter(BaseExchangeAdapter):
         side = PositionSide.LONG if trade_dict.get('side') == 'buy' else PositionSide.SHORT
         fee_cost, fee_currency = self._parse_fee_info(trade_dict.get('fee'))
 
+        # 从 info 中提取 Binance 特有字段
+        info = trade_dict.get('info', {})
+
+        # 获取已实现盈亏 (平仓时有值)
+        realized_pnl = None
+        realized_pnl_str = info.get('realizedPnl')
+        if realized_pnl_str:
+            try:
+                realized_pnl = Decimal(str(realized_pnl_str))
+            except:
+                pass
+
+        # 推断交易类型
+        # Binance Futures: positionSide 表示持仓方向，side 表示订单方向
+        # 如果有 realizedPnl 且不为 0，说明是平仓或减仓
+        trade_type = self._infer_trade_type(trade_dict, realized_pnl)
+
         return Trade(
             trade_id=str(trade_dict.get('id', '')),
             order_id=str(trade_dict.get('order', '')),
@@ -1022,12 +1039,43 @@ class BinanceAdapter(BaseExchangeAdapter):
             side=side,
             amount=self._safe_decimal(trade_dict.get('amount')),
             price=self._safe_decimal(trade_dict.get('price')),
+            trade_type=trade_type,
+            closed_pnl=realized_pnl if realized_pnl and realized_pnl != 0 else None,
             fee=fee_cost,
             fee_currency=fee_currency,
             is_maker=trade_dict.get('takerOrMaker') == 'maker' if trade_dict.get('takerOrMaker') else None,
             timestamp=datetime.fromtimestamp(trade_dict['timestamp'] / 1000) if trade_dict.get('timestamp') else datetime.now(),
             raw_data=trade_dict,
         )
+
+    def _infer_trade_type(self, trade_dict: Dict[str, Any], realized_pnl: Optional[Decimal]) -> str:
+        """
+        推断交易类型 (open/close/add/reduce)
+
+        Binance Futures 逻辑:
+        - 如果有 realizedPnl 且不为 0，说明是平仓操作 (close)
+        - 否则是开仓操作 (open)
+
+        注意: 加仓(add)和减仓(reduce)需要结合持仓历史判断，
+        这里简化为只区分 open/close
+        """
+        info = trade_dict.get('info', {})
+
+        # 检查是否是 reduceOnly 订单
+        reduce_only = info.get('reduceOnly', False)
+        if isinstance(reduce_only, str):
+            reduce_only = reduce_only.lower() == 'true'
+
+        # 如果有已实现盈亏（不为0），说明是平仓
+        if realized_pnl is not None and realized_pnl != 0:
+            return 'close'
+
+        # 如果是 reduceOnly 订单，也是平仓/减仓
+        if reduce_only:
+            return 'close'
+
+        # 否则是开仓
+        return 'open'
 
     @staticmethod
     def _parse_order_status(order_dict: Dict[str, Any]) -> OrderStatus:
