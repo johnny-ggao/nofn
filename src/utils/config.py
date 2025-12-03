@@ -42,6 +42,7 @@ class RiskConfig(BaseModel):
 
 class StrategyConfig(BaseModel):
     """策略运行配置"""
+    name: str = Field(default="mtf_momentum", description="策略名称 (mtf_momentum, turbo)")
     exchange: str = Field(default="hyperliquid", description="交易所")
     symbols: list[str] = Field(default=["BTC/USDC:USDC"], description="交易对列表")
     interval_seconds: int = Field(default=180, gt=0, description="循环间隔（秒）")

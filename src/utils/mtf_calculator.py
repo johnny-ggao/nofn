@@ -54,7 +54,7 @@ class MTFCalculator:
         计算1小时级别指标 (趋势确认)
 
         指标配置:
-        - EMA(8, 21, 50): 判断趋势方向和多空排列
+        - EMA(7, 21, 55): 判断趋势方向和多空排列
         - MACD(6, 13, 5): 识别趋势转折点和动量变化
         - RSI(14): 判断超买(>70)、超卖(<30)状态
         - ADX(14) + DI: 判断趋势强度(ADX>25表示强趋势)
@@ -76,21 +76,21 @@ class MTFCalculator:
 
         indicators = TimeframeIndicators(timeframe="1h")
 
-        # EMA (8, 21, 50)
-        if n >= 8:
-            ema8_arr = ema(closes, 8)
-            indicators.ema8 = float(ema8_arr[-1]) if not np.isnan(ema8_arr[-1]) else None
-            indicators.ema8_series = _get_series(ema8_arr, series_length)
+        # EMA (7, 21, 55)
+        if n >= 7:
+            ema7_arr = ema(closes, 7)
+            indicators.ema7 = float(ema7_arr[-1]) if not np.isnan(ema7_arr[-1]) else None
+            indicators.ema7_series = _get_series(ema7_arr, series_length)
 
         if n >= 21:
             ema21_arr = ema(closes, 21)
             indicators.ema21 = float(ema21_arr[-1]) if not np.isnan(ema21_arr[-1]) else None
             indicators.ema21_series = _get_series(ema21_arr, series_length)
 
-        if n >= 50:
-            ema50_arr = ema(closes, 50)
-            indicators.ema50 = float(ema50_arr[-1]) if not np.isnan(ema50_arr[-1]) else None
-            indicators.ema50_series = _get_series(ema50_arr, series_length)
+        if n >= 55:
+            ema55_arr = ema(closes, 55)
+            indicators.ema55 = float(ema55_arr[-1]) if not np.isnan(ema55_arr[-1]) else None
+            indicators.ema55_series = _get_series(ema55_arr, series_length)
 
         # MACD (6, 13, 5) - 快速参数
         if n >= 18:  # 13 + 5

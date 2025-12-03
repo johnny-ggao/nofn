@@ -29,6 +29,7 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "termcolor>=3.2.0",
     "langchain-community>=0.4.1",
+    "dashscope>=1.25.2",
 ]
 
 [dependency-groups]

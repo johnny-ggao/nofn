@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 from pathlib import Path
 
 from langchain_openai import ChatOpenAI
@@ -8,6 +8,9 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from termcolor import cprint
 
 from ..engine.market_snapshot import MarketSnapshot
+
+if TYPE_CHECKING:
+    from ..strategies import BaseStrategy
 
 
 class TradingAgent:
@@ -28,6 +31,7 @@ class TradingAgent:
         base_url: Optional[str] = None,
         temperature: float = 0.7,
         system_prompt_path: Optional[str] = None,
+        strategy: Optional["BaseStrategy"] = None,
     ):
         """
         初始化 Trading Agent
@@ -39,10 +43,12 @@ class TradingAgent:
             base_url: API 基础 URL (可选，用于自定义端点)
             temperature: 温度参数
             system_prompt_path: 系统提示词文件路径
+            strategy: 策略实例（可选，用于获取策略特定的 prompt 和配置）
         """
         self.model_provider = model_provider
         self.model_id = model_id
         self.temperature = temperature
+        self.strategy = strategy
 
         self.llm = ChatOpenAI(
             model=model_id,
@@ -51,9 +57,14 @@ class TradingAgent:
             temperature=temperature,
         )
 
-        self.system_prompt = self._load_system_prompt(system_prompt_path)
+        # 优先使用策略的 prompt，其次使用传入的路径
+        if strategy:
+            self.system_prompt = strategy.get_prompt()
+        else:
+            self.system_prompt = self._load_system_prompt(system_prompt_path)
 
-        cprint(f"✅ TradingAgent 初始化完成 ({model_provider}/{model_id})", "green")
+        strategy_info = f", 策略: {strategy.name}" if strategy else ""
+        cprint(f"✅ TradingAgent 初始化完成 ({model_provider}/{model_id}{strategy_info})", "green")
 
     @staticmethod
     def _load_system_prompt(prompt_path: Optional[str]) -> str:
@@ -122,7 +133,8 @@ class TradingAgent:
 
         # 使用 MarketSnapshot 的 to_text() 方法获取完整市场数据
         # 包含多时间框架指标 (4H/1H/15M)、永续合约指标、持仓信息等
-        lines.append(market_snapshot.to_text())
+        # 如果有策略实例，使用策略特定的指标格式化
+        lines.append(market_snapshot.to_text(strategy=self.strategy))
         lines.append("")
 
         # 最近交易记录
@@ -177,25 +189,42 @@ class TradingAgent:
             lines.append(memory_context)
             lines.append("")
 
-        # 输出要求
+        # 输出要求（统一格式）
         lines.append("## 输出要求")
         lines.append("")
-        lines.append("请分析以上市场数据并做出交易决策。输出 JSON 格式：")
+        lines.append("请分析以上**所有代币**的市场数据，并为**每个代币**做出交易决策。")
+        lines.append("**重要**: signals 数组必须包含所有代币的决策，每个代币一个 signal 对象。")
+        lines.append("")
+        lines.append("输出 JSON 格式：")
         lines.append("")
         lines.append("```json")
         lines.append("{")
-        lines.append('  "analysis": "你的分析（2-3句话）",')
+        lines.append('  "analysis": "整体市场分析（2-3句话）",')
         lines.append('  "decision_type": "trade | hold | wait",')
         lines.append('  "signals": [')
         lines.append('    {')
-        lines.append('      "action": "open_long | open_short | close_long | close_short | hold",')
+        lines.append('      "action": "open_long | open_short | close_position | hold | wait",')
         lines.append('      "symbol": "BTC/USDC:USDC",')
         lines.append('      "amount": 0.001,')
         lines.append('      "leverage": 3,')
         lines.append('      "stop_loss": 88000.0,')
         lines.append('      "take_profit": 96000.0,')
         lines.append('      "confidence": 85,')
-        lines.append('      "reason": "具体理由"')
+        lines.append('      "reason": "BTC具体理由"')
+        lines.append('    },')
+        lines.append('    {')
+        lines.append('      "action": "wait",')
+        lines.append('      "symbol": "ETH/USDC:USDC",')
+        lines.append('      "confidence": 40,')
+        lines.append('      "reason": "ETH具体理由"')
+        lines.append('    },')
+        lines.append('    {')
+        lines.append('      "action": "hold",')
+        lines.append('      "symbol": "SOL/USDC:USDC",')
+        lines.append('      "stop_loss": 180.0,')
+        lines.append('      "take_profit": 220.0,')
+        lines.append('      "confidence": 70,')
+        lines.append('      "reason": "SOL具体理由"')
         lines.append('    }')
         lines.append('  ]')
         lines.append('}')

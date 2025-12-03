@@ -27,39 +27,38 @@ class TimeframeIndicators:
     """
     单一时间框架的指标数据
 
-    1小时级别指标 (趋势确认):
-    - EMA(8, 21, 50): 判断趋势方向和多空排列
-    - MACD(6, 13, 5): 识别趋势转折点和动量变化
-    - RSI(14): 判断超买(>70)、超卖(<30)状态
-    - ADX(14) + DI: 判断趋势强度(ADX>25表示强趋势)
-    - ATR(14): 衡量市场波动性，计算止损距离
-    - BB(20, 2): 判断价格波动区间和超买超卖
+    MTF_Momentum 策略 (默认):
+    - 1H: EMA(7, 21, 55), MACD(6, 13, 5), RSI(14), ADX(14), ATR(14), BB(20, 2)
+    - 15M: EMA(8, 21, 50), RSI(14), MACD(6, 13, 5), Stochastic(14, 3, 3), Volume ROC(5), ATR(14)
+    - 5M: EMA(8), RSI(9), MACD(5, 10, 3), Volume MA(5)
 
-    15分钟级别指标 (入场时机):
-    - EMA(8, 21, 50)
-    - RSI(14)
-    - MACD(6, 13, 5)
-    - Stochastic(14, 3, 3): 识别超买超卖和背离信号
-    - Volume ROC(5): 确认价格变动是否有成交量支撑
-    - ATR(14)
-
-    5分钟级别指标 (精确入场):
-    - EMA(8): 快速均线
-    - RSI(9): 更敏感的参数
-    - MACD(5, 10, 3): 超快速参数
-    - Volume MA(5): 成交量均线
+    TurboTrader 策略:
+    - 1H: EMA(5, 20, 50), ADX(7), MACD(12, 26, 9) - 趋势确认
+    - 15M: EMA(8, 21, 50), RSI(7), MACD, BB, ATR通道 - 信号触发
+    - 5M: EMA(8, 13), VWAP, K线形态, 瞬时动量 - 精确入场
     """
     timeframe: str = "1h"
 
     # ========== EMA 移动平均 ==========
-    ema8: Optional[float] = None
-    ema21: Optional[float] = None
-    ema50: Optional[float] = None
+    # MTF_Momentum: 1H(7,21,55), 15M(8,21,50), 5M(8)
+    # TurboTrader: 1H(5,20,50), 15M(8,21,50), 5M(8,13)
+    ema5: Optional[float] = None   # TurboTrader 1H 快速均线
+    ema7: Optional[float] = None   # MTF_Momentum 1H 快速均线
+    ema8: Optional[float] = None   # 15M/5M 快速均线
+    ema13: Optional[float] = None  # TurboTrader 5M 中速均线
+    ema20: Optional[float] = None  # TurboTrader 1H 中期均线
+    ema21: Optional[float] = None  # MTF_Momentum 中期均线
+    ema50: Optional[float] = None  # 15M 慢速均线 / TurboTrader 1H 慢速均线
+    ema55: Optional[float] = None  # MTF_Momentum 1H 慢速均线
+    ema_angle: Optional[float] = None  # EMA 角度 (用于动态仓位计算)
 
     # ========== MACD ==========
     macd_value: Optional[float] = None
     macd_signal: Optional[float] = None
     macd_histogram: Optional[float] = None
+    macd_expanding: Optional[bool] = None  # 柱状线是否扩大
+    macd_golden_cross: Optional[bool] = None  # 金叉
+    macd_death_cross: Optional[bool] = None   # 死叉
 
     # ========== RSI ==========
     rsi: Optional[float] = None  # RSI值
@@ -72,20 +71,33 @@ class TimeframeIndicators:
     # ========== ATR 波动率 ==========
     atr: Optional[float] = None
     atr_percent: Optional[float] = None  # ATR百分比 (ATR/Price * 100)
+    atr_upper: Optional[float] = None    # ATR通道上轨 (TurboTrader)
+    atr_lower: Optional[float] = None    # ATR通道下轨 (TurboTrader)
 
     # ========== 布林带 ==========
     bb_upper: Optional[float] = None
     bb_middle: Optional[float] = None
     bb_lower: Optional[float] = None
+    bb_width_change: Optional[float] = None  # 带宽变化率 (TurboTrader)
 
     # ========== 随机指标 ==========
     stoch_k: Optional[float] = None
     stoch_d: Optional[float] = None
 
+    # ========== VWAP (TurboTrader) ==========
+    vwap: Optional[float] = None
+    vwap_slope: Optional[float] = None  # VWAP 斜率
+
     # ========== 成交量指标 ==========
     volume_roc: Optional[float] = None  # 成交量变化率
     volume_ma: Optional[float] = None   # 成交量均线
     volume_ratio: Optional[float] = None  # 当前成交量/均线
+
+    # ========== K线形态 (TurboTrader) ==========
+    turbo_candle: Optional[bool] = None    # 涡轮阳线 (实体>前5根平均2.5倍)
+    three_soldiers: Optional[bool] = None  # 三阳开泰 (连续3根阳线，涨幅递增)
+    gap_up: Optional[bool] = None          # 跳空高开 (缺口>0.8%且不补)
+    momentum_signal: Optional[bool] = None # 瞬时动量信号 (连续3根同向+动量递增+成交量配合)
 
     # ========== 持仓量指标 (OI - Open Interest) ==========
     # 仅在4小时级别使用，作为市场情绪指标
@@ -96,9 +108,13 @@ class TimeframeIndicators:
 
     # ========== 序列数据（最近N个点）==========
     prices_series: Optional[List[float]] = None
-    ema8_series: Optional[List[float]] = None
+    ema5_series: Optional[List[float]] = None   # TurboTrader 1H
+    ema7_series: Optional[List[float]] = None   # MTF_Momentum 1H
+    ema8_series: Optional[List[float]] = None   # 15M/5M
+    ema20_series: Optional[List[float]] = None  # TurboTrader 1H
     ema21_series: Optional[List[float]] = None
-    ema50_series: Optional[List[float]] = None
+    ema50_series: Optional[List[float]] = None  # 15M
+    ema55_series: Optional[List[float]] = None  # MTF_Momentum 1H
     macd_series: Optional[List[float]] = None
     rsi_series: Optional[List[float]] = None
 
@@ -106,9 +122,11 @@ class TimeframeIndicators:
         return {
             'timeframe': self.timeframe,
             'ema': {
-                'ema8': self.ema8,
-                'ema21': self.ema21,
-                'ema50': self.ema50,
+                'ema7': self.ema7,    # 1H 快速均线
+                'ema8': self.ema8,    # 15M/5M 快速均线
+                'ema21': self.ema21,  # 中期均线
+                'ema50': self.ema50,  # 15M 慢速均线
+                'ema55': self.ema55,  # 1H 慢速均线
             },
             'macd': {
                 'value': self.macd_value,
@@ -150,9 +168,20 @@ class TimeframeIndicators:
         """
         根据EMA排列判断趋势方向
 
+        1H使用EMA(7, 21, 55), 15M/5M使用EMA(8, 21, 50)
+
         Returns:
             "bullish" | "bearish" | "neutral"
         """
+        # 1H级别使用EMA(7, 21, 55)
+        if self.timeframe == "1h" and self.ema7 and self.ema21 and self.ema55:
+            if self.ema7 > self.ema21 > self.ema55:
+                return "bullish"
+            elif self.ema7 < self.ema21 < self.ema55:
+                return "bearish"
+            return "neutral"
+
+        # 15M/5M级别使用EMA(8, 21, 50)
         if self.ema8 and self.ema21 and self.ema50:
             if self.ema8 > self.ema21 > self.ema50:
                 return "bullish"
@@ -389,11 +418,11 @@ class AssetData:
             strength = tf.get_trend_strength()
             lines.append(f"- 趋势: {trend} ({strength})")
 
-            # EMA 排列
+            # EMA 排列 (1H使用EMA7, 21, 55)
             ema_parts = []
-            if tf.ema8: ema_parts.append(f"EMA8=${tf.ema8:.2f}")
+            if tf.ema7: ema_parts.append(f"EMA7=${tf.ema7:.2f}")
             if tf.ema21: ema_parts.append(f"EMA21=${tf.ema21:.2f}")
-            if tf.ema50: ema_parts.append(f"EMA50=${tf.ema50:.2f}")
+            if tf.ema55: ema_parts.append(f"EMA55=${tf.ema55:.2f}")
             if ema_parts:
                 lines.append(f"- EMA: {' > '.join(ema_parts)}")
 
@@ -541,8 +570,13 @@ class MarketSnapshot:
             'timestamp': self.timestamp.isoformat(),
         }
 
-    def to_text(self) -> str:
-        """转换为文本（供LLM阅读）"""
+    def to_text(self, strategy=None) -> str:
+        """
+        转换为文本（供LLM阅读）
+
+        Args:
+            strategy: 可选的策略实例，用于策略特定的指标格式化
+        """
         lines = [
             "# 市场快照",
             f"时间: {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}",
@@ -563,7 +597,11 @@ class MarketSnapshot:
 
         for symbol in sorted(self.assets.keys()):
             asset = self.assets[symbol]
-            lines.append(asset.to_text())
+            # 使用策略的 format_indicators 方法（如果提供）
+            if strategy and hasattr(strategy, 'format_indicators'):
+                lines.append(strategy.format_indicators(asset))
+            else:
+                lines.append(asset.to_text())
             lines.append("")
 
         return "\n".join(lines)

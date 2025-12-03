@@ -1,7 +1,8 @@
 """
 LangGraph 交易工作流
 """
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
+
 from datetime import datetime
 
 from langgraph.graph import StateGraph, END
@@ -13,6 +14,7 @@ from .memory import TradingMemory, TradingCase
 from ..engine.trading_engine import TradingEngine
 from ..engine.market_snapshot import MarketSnapshot
 from ..utils.config import LLMConfig
+from ..strategies import BaseStrategy, StrategyFactory
 
 
 class TradingWorkflowGraph:
@@ -36,7 +38,8 @@ class TradingWorkflowGraph:
         engine: TradingEngine,
         llm_config: LLMConfig,
         db_path: str = "data/trading_memory.db",
-        system_prompt_path: str = "src/prompts/nofn_v2.txt",
+        system_prompt_path: Optional[str] = None,
+        strategy: Optional[Union[str, BaseStrategy]] = None,
     ):
         """
         初始化工作流图
@@ -45,9 +48,25 @@ class TradingWorkflowGraph:
             engine: 交易引擎
             llm_config: LLM 配置
             db_path: 记忆数据库路径
-            system_prompt_path: 系统提示词文件路径
+            system_prompt_path: 系统提示词文件路径 (如果提供策略，则此参数被忽略)
+            strategy: 策略名称或策略实例。如果为 None，使用默认策略 (mtf_momentum)
         """
+        # 加载策略
+        self.strategy = self._load_strategy(strategy)
+        cprint(f"📊 使用策略: {self.strategy.name} v{self.strategy.version}", "cyan")
+
+        # 设置引擎的策略（用于指标计算）
         self.engine = engine
+        self.engine.strategy = self.strategy
+        self.engine._timeframes = self.strategy.get_timeframe_list()
+        self.engine._candle_limits = self.strategy.get_candle_limits()
+        self.engine._indicator_calculator = self.strategy.get_indicator_calculator()
+
+        # 获取策略的 prompt（策略优先，其次使用传入的路径）
+        if system_prompt_path:
+            effective_prompt_path = system_prompt_path
+        else:
+            effective_prompt_path = self.strategy.config.prompt_path
 
         # 初始化记忆系统（支持向量搜索）
         self.memory = TradingMemory(
@@ -60,14 +79,15 @@ class TradingWorkflowGraph:
             enable_vector_search=True,
         )
 
-        # 初始化 Trading Agent
+        # 初始化 Trading Agent（使用策略的 prompt）
         self.agent = TradingAgent(
             model_provider=llm_config.provider,
             model_id=llm_config.model,
             api_key=llm_config.api_key,
             base_url=llm_config.base_url,
             temperature=llm_config.temperature,
-            system_prompt_path=system_prompt_path,
+            system_prompt_path=effective_prompt_path,
+            strategy=self.strategy,
         )
 
         # 创建 StateGraph
@@ -77,6 +97,29 @@ class TradingWorkflowGraph:
         self.compiled_graph = self.graph.compile()
 
         cprint("✅ TradingWorkflowGraph 初始化完成 (LangGraph)", "green")
+
+    @staticmethod
+    def _load_strategy(strategy: Optional[Union[str, BaseStrategy]]) -> BaseStrategy:
+        """
+        加载策略
+
+        Args:
+            strategy: 策略名称、策略实例或 None
+
+        Returns:
+            策略实例
+        """
+        if strategy is None:
+            # 使用默认策略
+            return StrategyFactory.create_default()
+        elif isinstance(strategy, str):
+            # 通过名称加载
+            return StrategyFactory.get(strategy)
+        elif isinstance(strategy, BaseStrategy):
+            # 直接使用传入的实例
+            return strategy
+        else:
+            raise ValueError(f"无效的策略类型: {type(strategy)}")
 
     def _build_graph(self) -> StateGraph:
         """构建工作流图"""

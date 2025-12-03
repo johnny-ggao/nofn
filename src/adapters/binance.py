@@ -885,6 +885,9 @@ class BinanceAdapter(BaseExchangeAdapter):
             except:
                 pass
 
+            # 获取 24 小时涨跌幅 (Binance ticker 包含此数据)
+            price_change_percent = self._safe_decimal_optional(ticker.get('percentage'))
+
             return LatestPrice(
                 symbol=symbol,
                 last_price=Decimal(str(ticker.get('last', 0))),
@@ -892,6 +895,7 @@ class BinanceAdapter(BaseExchangeAdapter):
                 index_price=index_price,
                 bid_price=self._safe_decimal_optional(ticker.get('bid')),
                 ask_price=self._safe_decimal_optional(ticker.get('ask')),
+                price_change_percent=price_change_percent,
                 timestamp=datetime.fromtimestamp(ticker['timestamp'] / 1000) if ticker.get('timestamp') else datetime.now(),
                 raw_data=ticker,
             )

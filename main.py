@@ -15,6 +15,7 @@ async def main():
     """主函数"""
     load_dotenv()
 
+    strategy_name = config.strategy.name
     exchange = config.strategy.exchange
     symbols = config.strategy.symbols
     interval_seconds = config.strategy.interval_seconds
@@ -28,6 +29,7 @@ async def main():
     cprint(f"\n📊 交易所: {exchange.upper()}", "white")
     cprint(f"💰 监控币种: {', '.join(symbols)}", "white")
     cprint(f"⏱️  循环间隔: {interval_seconds}秒 ({interval_seconds / 60:.1f}分钟)", "white")
+    cprint(f"🎯 交易策略: {strategy_name}", "white")
     cprint(f"🤖 LLM: {config.llm.provider}/{config.llm.model}", "white")
     cprint("")
 
@@ -48,11 +50,12 @@ async def main():
         engine = TradingEngine(adapter=adapter)
         cprint("✅ 交易引擎初始化完成", "green")
 
-        # 3. 创建工作流图
+        # 3. 创建工作流图（使用配置的策略）
         cprint("\n📊 创建工作流图...", "cyan")
         workflow = TradingWorkflowGraph(
             engine=engine,
             llm_config=config.llm,
+            strategy=strategy_name,
         )
 
         # 4. 运行交易循环

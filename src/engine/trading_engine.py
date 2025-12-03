@@ -12,34 +12,59 @@
 - 高效: 批量操作，减少API调用
 """
 import asyncio
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, TYPE_CHECKING
+
 from decimal import Decimal
 from datetime import datetime
 
 from termcolor import cprint
 
 from ..adapters.base import BaseExchangeAdapter
-from ..models import Position, PositionSide, OrderType, Candle, TradeHistoryManager
-from ..utils.indicators import ema, rsi, macd, atr
-from .market_snapshot import MarketSnapshot, AssetData, IndicatorData
+from ..models import PositionSide, OrderType, TradeHistoryManager
+from .market_snapshot import MarketSnapshot, AssetData
+
+if TYPE_CHECKING:
+    from ..strategies import BaseStrategy
 
 
 class TradingEngine:
     """
-    确定性交易引擎
+    交易引擎
 
     职责:
     1. 批量获取市场数据（价格、K线、持仓等）
     2. 批量计算技术指标（numpy操作，毫秒级）
     3. 执行交易订单（直接调用adapter）
     4. 管理数据缓存
+
+    策略支持:
+    - 根据策略配置动态选择时间框架和K线数量
+    - 使用策略对应的指标计算器
     """
 
-    def __init__(self, adapter: BaseExchangeAdapter, trade_history: Optional[TradeHistoryManager] = None):
+    def __init__(
+        self,
+        adapter: BaseExchangeAdapter,
+        trade_history: Optional[TradeHistoryManager] = None,
+        strategy: Optional["BaseStrategy"] = None,
+    ):
         self.adapter = adapter
         self.trade_history = trade_history
+        self.strategy = strategy
         self._cache: Dict[str, any] = {}
         self._cache_ttl = 10  # 缓存10秒
+
+        # 策略相关配置
+        if strategy:
+            self._timeframes = strategy.get_timeframe_list()
+            self._candle_limits = strategy.get_candle_limits()
+            self._indicator_calculator = strategy.get_indicator_calculator()
+            cprint(f"📊 TradingEngine 使用策略: {strategy.name}", "cyan")
+        else:
+            # 默认配置 (兼容无策略模式)
+            self._timeframes = ["1h", "15m", "5m"]
+            self._candle_limits = {"1h": 200, "15m": 100, "5m": 100}
+            self._indicator_calculator = None
 
     async def get_market_snapshot(self, symbols: List[str]) -> MarketSnapshot:
         """
@@ -110,86 +135,59 @@ class TradingEngine:
             return MarketSnapshot(assets={})
 
     async def _get_asset_data(self, symbol: str) -> Optional[AssetData]:
-        """获取单个资产的完整数据"""
+        """
+        获取单个资产的完整数据
+
+        使用策略模块获取 K 线数据和计算指标
+        """
         try:
-            # 并发获取价格、K线（5分钟、15分钟、1小时）、持仓、资金费率、持仓量、持仓量历史
+            # 并发获取：价格、持仓、资金费率、持仓量、OI历史
             price_task = self.adapter.get_latest_price(symbol)
-            candles_5m_task = self.adapter.get_candles(symbol, '5m', limit=100)    # 5分钟K线 - 精确入场
-            candles_15m_task = self.adapter.get_candles(symbol, '15m', limit=100)  # 15分钟K线 - 入场时机
-            candles_1h_task = self.adapter.get_candles(symbol, '1h', limit=200)    # 1小时K线 - 趋势确认
             position_task = self.adapter.get_position(symbol)
             funding_rate_task = self.adapter.get_funding_rate(symbol)
             open_interest_task = self.adapter.get_open_interest(symbol)
 
-            # 获取持仓量历史（4小时周期，用于计算变化率）
-            # 需要检查 adapter 是否支持此方法
+            # OI 历史（可选）
             oi_history_task = None
             if hasattr(self.adapter, 'get_open_interest_history'):
                 oi_history_task = self.adapter.get_open_interest_history(symbol, period='4h', limit=10)
 
-            tasks = [
-                price_task, candles_5m_task, candles_15m_task, candles_1h_task,
-                position_task, funding_rate_task, open_interest_task
-            ]
+            tasks = [price_task, position_task, funding_rate_task, open_interest_task]
             if oi_history_task:
                 tasks.append(oi_history_task)
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             price = results[0]
-            candles_5m = results[1]
-            candles_15m = results[2]
-            candles_1h = results[3]
-            position = results[4]
-            funding_rate_data = results[5]
-            open_interest = results[6]
-            oi_history = results[7] if len(results) > 7 else []
+            position = results[1]
+            funding_rate_data = results[2]
+            open_interest = results[3]
+            oi_history = results[4] if len(results) > 4 else []
 
-            # 处理异常
+            # 处理价格异常
             if isinstance(price, Exception):
                 cprint(f"⚠️  {symbol} 价格获取失败: {price}", "yellow")
                 return None
-            if isinstance(candles_5m, Exception):
-                cprint(f"⚠️  {symbol} 5分钟K线获取失败: {candles_5m}", "yellow")
-                candles_5m = []
-            if isinstance(candles_15m, Exception):
-                cprint(f"⚠️  {symbol} 15分钟K线获取失败: {candles_15m}", "yellow")
-                candles_15m = []
-            if isinstance(candles_1h, Exception):
-                cprint(f"⚠️  {symbol} 1小时K线获取失败: {candles_1h}", "yellow")
-                candles_1h = []
 
-            current_price = float(price.last_price)
-
-            # 延迟导入以避免循环依赖
-            from ..utils.mtf_calculator import MTFCalculator
-
-            # 计算多时间框架指标
+            # 使用策略获取市场数据和计算指标
             tf_1h = None
             tf_15m = None
             tf_5m = None
 
-            if candles_1h and len(candles_1h) >= 50:
-                ohlcv_1h = self._candles_to_ohlcv(candles_1h)
-                tf_1h = MTFCalculator.calculate_1h(ohlcv_1h, current_price)
+            if self.strategy:
+                try:
+                    tf_indicators = await self.strategy.fetch_market_data(self.adapter, symbol)
+                    tf_1h = tf_indicators.get("1h")
+                    tf_15m = tf_indicators.get("15m")
+                    tf_5m = tf_indicators.get("5m")
 
-                # 添加 OI 指标到 1H 时间框架
-                if tf_1h and not isinstance(oi_history, Exception) and oi_history:
-                    self._add_oi_indicators(tf_1h, oi_history)
+                    # 添加 OI 指标到 1H 时间框架
+                    if tf_1h and not isinstance(oi_history, Exception) and oi_history:
+                        self._add_oi_indicators(tf_1h, oi_history)
+                except Exception as e:
+                    cprint(f"⚠️  {symbol} 策略指标计算失败: {e}", "yellow")
 
-            if candles_15m and len(candles_15m) >= 50:
-                ohlcv_15m = self._candles_to_ohlcv(candles_15m)
-                tf_15m = MTFCalculator.calculate_15m(ohlcv_15m, current_price)
-
-            if candles_5m and len(candles_5m) >= 20:
-                ohlcv_5m = self._candles_to_ohlcv(candles_5m)
-                tf_5m = MTFCalculator.calculate_5m(ohlcv_5m, current_price)
-
-            # 旧版指标（向后兼容）- 使用1小时数据
-            indicators_1h = self._calculate_indicators(candles_1h) if candles_1h else IndicatorData()
-            indicators_15m = self._calculate_indicators(candles_15m) if candles_15m else None
-
-            # 提取市场情绪指标（独立于时间框架）
+            # 提取市场情绪指标
             funding_rate_val = None
             if not isinstance(funding_rate_data, Exception) and funding_rate_data:
                 funding_rate_val = float(funding_rate_data.funding_rate)
@@ -197,14 +195,6 @@ class TradingEngine:
             open_interest_val = None
             if not isinstance(open_interest, Exception) and open_interest:
                 open_interest_val = float(open_interest)
-
-            # 计算成交量指标（从1小时K线）
-            volume_current = None
-            volume_avg = None
-            if candles_1h and len(candles_1h) >= 20:
-                volumes_1h = [float(c.volume) for c in candles_1h]
-                volume_current = volumes_1h[-1]  # 最新一根K线的成交量
-                volume_avg = sum(volumes_1h[-20:]) / 20  # 最近20根的平均
 
             # 构建持仓信息
             position_size = Decimal('0')
@@ -222,24 +212,24 @@ class TradingEngine:
                 stop_loss = position.stop_loss
                 take_profit = position.take_profit
 
-            # 构建AssetData
+            # 获取 24 小时涨跌幅
+            change_24h_percent = None
+            if price.price_change_percent is not None:
+                change_24h_percent = float(price.price_change_percent)
+
+            # 构建 AssetData
             asset_data = AssetData(
                 symbol=symbol,
                 current_price=price.last_price,
                 mark_price=price.mark_price,
                 bid=price.bid_price,
                 ask=price.ask_price,
-                # 多时间框架指标
+                change_24h_percent=change_24h_percent,
                 tf_1h=tf_1h,
                 tf_15m=tf_15m,
                 tf_5m=tf_5m,
-                # 旧版指标（向后兼容）
-                indicators=indicators_1h,
-                indicators_1h=indicators_15m,
                 funding_rate=funding_rate_val,
                 open_interest=open_interest_val,
-                volume_current=volume_current,
-                volume_avg=volume_avg,
                 position_size=position_size,
                 position_side=position_side,
                 entry_price=entry_price,
@@ -254,83 +244,6 @@ class TradingEngine:
         except Exception as e:
             cprint(f"❌ 获取 {symbol} 数据失败: {e}", "red")
             return None
-
-    @staticmethod
-    def _candles_to_ohlcv(candles: List[Candle]):
-        """将Candle列表转换为OHLCVData"""
-        from ..utils.mtf_calculator import OHLCVData
-        return OHLCVData(
-            open=[float(c.open) for c in candles],
-            high=[float(c.high) for c in candles],
-            low=[float(c.low) for c in candles],
-            close=[float(c.close) for c in candles],
-            volume=[float(c.volume) for c in candles],
-        )
-
-    @staticmethod
-    def _calculate_indicators(candles: List[Candle]) -> IndicatorData:
-        """
-        批量计算所有技术指标
-
-        使用numpy操作，毫秒级完成
-        """
-        if not candles or len(candles) < 50:
-            return IndicatorData()
-
-        try:
-            # 提取价格数据
-            closes = [float(c.close) for c in candles]
-            highs = [float(c.high) for c in candles]
-            lows = [float(c.low) for c in candles]
-
-            # 批量计算指标（返回数组，需要提取最后一个值）
-            ema20_arr = ema(closes, 20)
-            ema50_arr = ema(closes, 50)
-            ema200_arr = ema(closes, 200) if len(closes) >= 200 else None
-
-            # 提取最新值（数组的最后一个元素）
-            ema20_val = float(ema20_arr[-1]) if len(ema20_arr) > 0 else None
-            ema50_val = float(ema50_arr[-1]) if len(ema50_arr) > 0 else None
-            ema200_val = float(ema200_arr[-1]) if ema200_arr is not None and len(ema200_arr) > 0 else None
-
-            rsi14_arr = rsi(closes, 14)
-            rsi14_val = float(rsi14_arr[-1]) if len(rsi14_arr) > 0 else 50.0
-
-            # MACD 返回 (macd_line, signal_line, histogram) 三个数组
-            macd_line, signal_line, histogram = macd(closes)
-            macd_value = float(macd_line[-1]) if len(macd_line) > 0 else 0.0
-            macd_signal = float(signal_line[-1]) if len(signal_line) > 0 else 0.0
-            macd_hist = float(histogram[-1]) if len(histogram) > 0 else 0.0
-
-            atr14_arr = atr(highs, lows, closes, 14)
-            atr14_val = float(atr14_arr[-1]) if len(atr14_arr) > 0 else 0.0
-
-            # 提取最近10个点的序列（从旧到新）
-            n_points = 10
-            prices_series = [float(closes[i]) for i in range(-min(n_points, len(closes)), 0)] if len(closes) > 0 else None
-            ema20_series = [float(ema20_arr[i]) for i in range(-min(n_points, len(ema20_arr)), 0)] if len(ema20_arr) > 0 else None
-            macd_series = [float(macd_line[i]) for i in range(-min(n_points, len(macd_line)), 0)] if len(macd_line) > 0 else None
-            rsi14_series = [float(rsi14_arr[i]) for i in range(-min(n_points, len(rsi14_arr)), 0)] if len(rsi14_arr) > 0 else None
-
-            return IndicatorData(
-                ema20=ema20_val,
-                ema50=ema50_val,
-                ema200=ema200_val,
-                rsi14=rsi14_val,
-                macd_value=macd_value,
-                macd_signal=macd_signal,
-                macd_histogram=macd_hist,
-                atr14=atr14_val,
-                # 序列数据
-                prices_series=prices_series,
-                ema20_series=ema20_series,
-                macd_series=macd_series,
-                rsi14_series=rsi14_series,
-            )
-
-        except Exception as e:
-            cprint(f"⚠️  指标计算失败: {e}", "yellow")
-            return IndicatorData()
 
     @staticmethod
     def _add_oi_indicators(tf_4h, oi_history: List[Dict]) -> None:

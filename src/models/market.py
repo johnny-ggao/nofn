@@ -141,6 +141,9 @@ class LatestPrice(BaseModel):
     bid_price: Optional[Decimal] = Field(None, description="买一价")
     ask_price: Optional[Decimal] = Field(None, description="卖一价")
 
+    # 24小时涨跌幅（部分交易所支持，如 Binance）
+    price_change_percent: Optional[Decimal] = Field(None, description="24小时涨跌幅百分比")
+
     # 时间戳
     timestamp: datetime = Field(default_factory=datetime.now, description="数据时间")
 
@@ -154,7 +157,8 @@ class LatestPrice(BaseModel):
                 "mark_price": "65005",
                 "index_price": "64995",
                 "bid_price": "64998",
-                "ask_price": "65002"
+                "ask_price": "65002",
+                "price_change_percent": "2.35"
             }
         }
     }

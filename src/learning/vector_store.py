@@ -123,15 +123,26 @@ class TradingVectorStore:
                 if tf_data:
                     lines.append(f"Timeframe {tf_name}:")
 
-                    # EMA
+                    # EMA - 1H uses EMA(7, 21, 55), 15M/5M uses EMA(8, 21, 50)
                     ema = tf_data.get('ema', {})
-                    if ema.get('ema8') and ema.get('ema21') and ema.get('ema50'):
-                        if ema['ema8'] > ema['ema21'] > ema['ema50']:
-                            lines.append("  EMA: Bullish alignment")
-                        elif ema['ema8'] < ema['ema21'] < ema['ema50']:
-                            lines.append("  EMA: Bearish alignment")
-                        else:
-                            lines.append("  EMA: Mixed/Ranging")
+                    if tf_name == '1h':
+                        # 1H级别使用EMA7/21/55
+                        if ema.get('ema7') and ema.get('ema21') and ema.get('ema55'):
+                            if ema['ema7'] > ema['ema21'] > ema['ema55']:
+                                lines.append("  EMA: Bullish alignment (EMA7>21>55)")
+                            elif ema['ema7'] < ema['ema21'] < ema['ema55']:
+                                lines.append("  EMA: Bearish alignment (EMA7<21<55)")
+                            else:
+                                lines.append("  EMA: Mixed/Ranging")
+                    else:
+                        # 15M/5M级别使用EMA8/21/50
+                        if ema.get('ema8') and ema.get('ema21') and ema.get('ema50'):
+                            if ema['ema8'] > ema['ema21'] > ema['ema50']:
+                                lines.append("  EMA: Bullish alignment (EMA8>21>50)")
+                            elif ema['ema8'] < ema['ema21'] < ema['ema50']:
+                                lines.append("  EMA: Bearish alignment (EMA8<21<50)")
+                            else:
+                                lines.append("  EMA: Mixed/Ranging")
 
                     # RSI
                     rsi = tf_data.get('rsi')
