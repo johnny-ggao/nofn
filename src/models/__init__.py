@@ -16,6 +16,8 @@ from .trading import (
     Order,
     Trade,
     OrderStatus,
+    TakeProfitTarget,
+    MultiTargetSLTP,
 )
 from .market import (
     Candle,
@@ -66,6 +68,8 @@ __all__ = [
     "Balance",
     "Order",
     "Trade",
+    "TakeProfitTarget",
+    "MultiTargetSLTP",
     # Market
     "Candle",
     "Ticker24h",

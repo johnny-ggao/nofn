@@ -6,11 +6,30 @@
 - HyperliquidAdapter: Hyperliquid 永续合约
 - BinanceAdapter: Binance 永续合约 (USDT-M / USDC-M)
 - AdapterFactory: 适配器工厂
+
+WebSocket 管理器：
+- BinanceWebSocketManager: Binance WebSocket 管理器
+- HyperliquidWebSocketManager: Hyperliquid WebSocket 管理器
 """
 from .base import BaseExchangeAdapter
 from .hyperliquid import HyperliquidAdapter
 from .binance import BinanceAdapter
 from .factory import AdapterFactory, create_adapter
+from .binance_websocket import (
+    BinanceWebSocketManager,
+    TickerData,
+    KlineData,
+    MarkPriceData,
+    BinanceStreamType,
+)
+from .hyperliquid_websocket import HyperliquidWebSocketManager
+from .market_data_cache import (
+    MarketDataCache,
+    CachedBinanceWebSocketManager,
+    CacheConfig,
+    CachedTicker,
+    CachedKline,
+)
 
 __all__ = [
     # 适配器
@@ -20,4 +39,17 @@ __all__ = [
     # 工厂
     "AdapterFactory",
     "create_adapter",
+    # WebSocket
+    "BinanceWebSocketManager",
+    "HyperliquidWebSocketManager",
+    "TickerData",
+    "KlineData",
+    "MarkPriceData",
+    "BinanceStreamType",
+    # 缓存
+    "MarketDataCache",
+    "CachedBinanceWebSocketManager",
+    "CacheConfig",
+    "CachedTicker",
+    "CachedKline",
 ]

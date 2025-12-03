@@ -131,23 +131,21 @@ class TradingAgent:
         """构建决策提示词"""
         lines = []
 
-        # 使用 MarketSnapshot 的 to_text() 方法获取完整市场数据
-        # 包含多时间框架指标 (4H/1H/15M)、永续合约指标、持仓信息等
-        # 如果有策略实例，使用策略特定的指标格式化
+        # 使用策略特定的指标格式化
         lines.append(market_snapshot.to_text(strategy=self.strategy))
         lines.append("")
 
-        # 最近交易记录
+        # 最近已平仓记录（持仓历史）
         if recent_trades:
-            lines.append("## 最近交易记录")
+            lines.append("## 最近已平仓记录")
             lines.append("")
 
-            # 交易类型映射
-            trade_type_map = {
-                'open': '开仓',
+            # 平仓原因映射
+            close_reason_map = {
+                'manual': '手动',
+                'stop_loss': '止损',
+                'take_profit': '止盈',
                 'close': '平仓',
-                'add': '加仓',
-                'reduce': '减仓',
             }
 
             # 统计盈亏
@@ -156,20 +154,41 @@ class TradingAgent:
             loss_count = 0
 
             for trade in recent_trades:
-                trade_type = trade.get('trade_type', 'N/A')
-                trade_type_cn = trade_type_map.get(trade_type, trade_type)
                 closed_pnl = trade.get('closed_pnl')
+                pnl_percent = trade.get('pnl_percent')
+                close_reason = trade.get('close_reason', 'close')
+                close_reason_cn = close_reason_map.get(close_reason, close_reason)
+                trade_type = trade.get('trade_type', 'close')
 
-                line = f"- {trade.get('symbol', 'N/A')} | {trade_type_cn} | {trade.get('side', 'N/A').upper()} | 价格: ${trade.get('price', 0):.2f} | 数量: {trade.get('amount', 0)}"
+                # 构建行：交易对 | 方向 | 价格信息 | 数量 | 杠杆 | 盈亏 | 平仓原因
+                entry_price = trade.get('entry_price') or 0
+                close_price = trade.get('close_price')
+                side = trade.get('side', 'N/A')
+                if isinstance(side, str):
+                    side = side.upper()
 
-                if trade_type == 'close' and closed_pnl is not None:
+                # 根据是否有平仓价决定显示格式
+                if close_price is not None:
+                    price_info = f"${entry_price:.2f}→${close_price:.2f}"
+                else:
+                    price_info = f"${entry_price:.2f}"
+
+                leverage = trade.get('leverage') or 1
+                line = f"- {trade.get('symbol', 'N/A')} | {side} | {price_info} | 数量: {trade.get('amount', 0)} | {leverage}x"
+
+                if closed_pnl is not None:
                     pnl_sign = "+" if closed_pnl >= 0 else ""
-                    line += f" | **盈亏: {pnl_sign}${closed_pnl:.2f}**"
+                    pnl_text = f"{pnl_sign}${closed_pnl:.2f}"
+                    if pnl_percent is not None:
+                        pnl_text += f" ({pnl_sign}{pnl_percent:.1f}%)"
+                    line += f" | **{pnl_text}** ({close_reason_cn})"
                     total_pnl += closed_pnl
                     if closed_pnl >= 0:
                         win_count += 1
                     else:
                         loss_count += 1
+                elif trade_type == 'open':
+                    line += " | 开仓"
 
                 lines.append(line)
 
@@ -179,7 +198,7 @@ class TradingAgent:
                 lines.append("")
                 win_rate = win_count / close_count * 100
                 pnl_sign = "+" if total_pnl >= 0 else ""
-                lines.append(f"**最近 {close_count} 笔平仓统计**: 胜率 {win_rate:.0f}% ({win_count}胜/{loss_count}负), 总盈亏 {pnl_sign}${total_pnl:.2f}")
+                lines.append(f"**最近 {close_count} 笔统计**: 胜率 {win_rate:.0f}% ({win_count}胜/{loss_count}负), 总盈亏 {pnl_sign}${total_pnl:.2f}")
 
             lines.append("")
 
@@ -208,7 +227,12 @@ class TradingAgent:
         lines.append('      "amount": 0.001,')
         lines.append('      "leverage": 3,')
         lines.append('      "stop_loss": 88000.0,')
-        lines.append('      "take_profit": 96000.0,')
+        lines.append('      "take_profits": [')
+        lines.append('        {"price": 92000.0, "percent": 25, "new_stop_loss": 90000.0},')
+        lines.append('        {"price": 94000.0, "percent": 35, "new_stop_loss": 91500.0},')
+        lines.append('        {"price": 96000.0, "percent": 25},')
+        lines.append('        {"price": 100000.0, "percent": 15}')
+        lines.append('      ],')
         lines.append('      "confidence": 85,')
         lines.append('      "reason": "BTC具体理由"')
         lines.append('    },')
@@ -221,14 +245,30 @@ class TradingAgent:
         lines.append('    {')
         lines.append('      "action": "hold",')
         lines.append('      "symbol": "SOL/USDC:USDC",')
-        lines.append('      "stop_loss": 180.0,')
-        lines.append('      "take_profit": 220.0,')
+        lines.append('      "amount": 0.5,')
+        lines.append('      "entry_price": 175.0,')
+        lines.append('      "stop_loss": 170.0,')
+        lines.append('      "take_profits": [')
+        lines.append('        {"price": 200.0, "percent": 50},')
+        lines.append('        {"price": 220.0, "percent": 50}')
+        lines.append('      ],')
         lines.append('      "confidence": 70,')
         lines.append('      "reason": "SOL具体理由"')
         lines.append('    }')
         lines.append('  ]')
         lines.append('}')
         lines.append("```")
+        lines.append("")
+        lines.append("**HOLD 信号说明**: 当已有持仓且选择继续持有时，需要包含：")
+        lines.append("- `amount`: 当前持仓数量")
+        lines.append("- `entry_price`: 开仓均价")
+        lines.append("- `stop_loss`: 止损价格（可调整）")
+        lines.append("- `take_profits`: 止盈目标（可调整）")
+        lines.append("")
+        lines.append("**止盈说明**: `take_profits` 支持多重止盈目标，每个目标包含：")
+        lines.append("- `price`: 止盈价格")
+        lines.append("- `percent`: 该目标平仓比例 (所有目标 percent 之和应为 100)")
+        lines.append("- `new_stop_loss`: (可选) 触发该止盈后的新止损价格，用于锁定利润")
 
         return "\n".join(lines)
 

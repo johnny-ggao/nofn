@@ -1,7 +1,7 @@
 """
 交易相关数据模型
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
@@ -78,6 +78,84 @@ class TradingIntent(BaseModel):
     }
 
 
+class TakeProfitTarget(BaseModel):
+    """
+    止盈目标模型
+
+    支持多重止盈策略，例如 TurboTrader 的四重止盈：
+    - 第一目标 (1:1): 止盈 25%
+    - 第二目标 (1:2): 止盈 35%
+    - 第三目标 (1:3): 止盈 25%
+    - 第四目标 (1:5+): 止盈 15%
+    """
+    price: Decimal = Field(..., description="止盈价格")
+    percent: float = Field(..., ge=0.0, le=100.0, description="该目标平仓比例 (%)")
+    order_id: Optional[str] = Field(None, description="对应的订单ID（已创建时）")
+    triggered: bool = Field(default=False, description="是否已触发")
+    new_stop_loss: Optional[Decimal] = Field(None, description="触发后的新止损价格")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "price": "70000",
+                "percent": 25.0,
+                "order_id": "123456",
+                "triggered": False,
+                "new_stop_loss": "65000"
+            }
+        }
+    }
+
+
+class MultiTargetSLTP(BaseModel):
+    """
+    多重止盈止损配置模型
+
+    用于支持复杂的风控策略：
+    - 单一止损（或移动止损）
+    - 多重止盈目标（阶梯式止盈）
+
+    示例：TurboTrader 四重止盈策略
+    - 止损: 入场价 - 1.5%
+    - 止盈1: 入场价 + 1.5% (平仓 25%，止损移至入场价)
+    - 止盈2: 入场价 + 3.0% (平仓 35%，止损移至盈利 1.2%)
+    - 止盈3: 入场价 + 4.5% (平仓 25%，动态跟踪止损)
+    - 止盈4: 入场价 + 7.5% (平仓 15%，SAR 跟踪)
+    """
+    stop_loss: Optional[Decimal] = Field(None, description="止损价格")
+    take_profits: List[TakeProfitTarget] = Field(default_factory=list, description="多重止盈目标列表")
+    trailing_stop: Optional[float] = Field(None, description="移动止损百分比 (%)")
+    trailing_stop_trigger: Optional[Decimal] = Field(None, description="移动止损触发价格")
+
+    def get_active_take_profits(self) -> List[TakeProfitTarget]:
+        """获取未触发的止盈目标"""
+        return [tp for tp in self.take_profits if not tp.triggered]
+
+    def get_total_tp_percent(self) -> float:
+        """获取所有止盈目标的总百分比"""
+        return sum(tp.percent for tp in self.take_profits)
+
+    def validate_tp_percent(self) -> bool:
+        """验证止盈百分比之和是否为100%"""
+        total = self.get_total_tp_percent()
+        return 99.0 <= total <= 101.0  # 允许小误差
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "stop_loss": "63000",
+                "take_profits": [
+                    {"price": "66000", "percent": 25.0, "new_stop_loss": "65000"},
+                    {"price": "68000", "percent": 35.0, "new_stop_loss": "66200"},
+                    {"price": "70000", "percent": 25.0},
+                    {"price": "75000", "percent": 15.0}
+                ],
+                "trailing_stop": 1.0
+            }
+        }
+    }
+
+
 class Position(BaseModel):
     """
     持仓信息模型
@@ -95,10 +173,13 @@ class Position(BaseModel):
     realized_pnl: Optional[Decimal] = Field(None, description="已实现盈亏")
     pnl_percentage: Optional[float] = Field(None, description="盈亏百分比")
 
-    # 风险管理
+    # 风险管理 (基础单一止盈止损)
     stop_loss: Optional[Decimal] = Field(None, description="止损价格")
-    take_profit: Optional[Decimal] = Field(None, description="止盈价格")
+    take_profit: Optional[Decimal] = Field(None, description="止盈价格（单一）")
     leverage: int = Field(default=1, description="杠杆倍数")
+
+    # 多重止盈止损配置
+    multi_sltp: Optional[MultiTargetSLTP] = Field(None, description="多重止盈止损配置")
 
     # 时间信息
     opened_at: datetime = Field(..., description="开仓时间")
@@ -106,6 +187,10 @@ class Position(BaseModel):
 
     # 原始数据
     raw_data: Dict[str, Any] = Field(default_factory=dict, description="交易所原始数据")
+
+    def has_multi_tp(self) -> bool:
+        """是否配置了多重止盈"""
+        return self.multi_sltp is not None and len(self.multi_sltp.take_profits) > 0
 
 
 class ExecutionResult(BaseModel):

@@ -29,6 +29,8 @@ from ..models import (
     Order,
     Trade,
     OrderStatus,
+    TakeProfitTarget,
+    MultiTargetSLTP,
 )
 
 
@@ -489,6 +491,208 @@ class BinanceAdapter(BaseExchangeAdapter):
             cprint(f"⚠️  查询订单失败: {str(e)}", "yellow")
 
         return cancelled
+
+    async def set_multi_take_profit(
+        self,
+        position: Dict[str, Any],
+        take_profits: List[TakeProfitTarget],
+        stop_loss: Optional[Decimal] = None,
+    ) -> ExecutionResult:
+        """
+        设置多重止盈止损
+
+        Binance 实现方式：为每个止盈目标创建独立的 TAKE_PROFIT_MARKET 订单，
+        每个订单的数量按照目标百分比计算。
+
+        Args:
+            position: 持仓信息字典
+            take_profits: 多重止盈目标列表
+            stop_loss: 止损价格（可选）
+
+        Returns:
+            ExecutionResult: 执行结果
+
+        示例:
+            take_profits = [
+                TakeProfitTarget(price=70000, percent=25.0, new_stop_loss=65000),
+                TakeProfitTarget(price=72000, percent=35.0, new_stop_loss=68000),
+                TakeProfitTarget(price=75000, percent=25.0),
+                TakeProfitTarget(price=80000, percent=15.0),
+            ]
+        """
+        try:
+            symbol = position['symbol']
+            symbol = self._normalize_symbol(symbol)
+            position_amount = abs(float(position['amount']))
+            position_side = position['side']
+
+            if isinstance(position_side, str):
+                position_side = PositionSide.LONG if position_side.lower() == 'long' else PositionSide.SHORT
+
+            if position_amount == 0:
+                return self._build_error_result(
+                    TradingAction.MODIFY_SL_TP,
+                    symbol,
+                    "持仓数量为0",
+                    "Position size is 0"
+                )
+
+            # 验证止盈百分比之和
+            total_percent = sum(tp.percent for tp in take_profits)
+            if total_percent > 101.0:
+                return self._build_error_result(
+                    TradingAction.MODIFY_SL_TP,
+                    symbol,
+                    f"止盈百分比之和超过100%: {total_percent:.1f}%",
+                    "Take profit percentages exceed 100%"
+                )
+
+            # 先取消现有的止盈止损订单
+            await self._cancel_sl_tp_orders(symbol)
+
+            new_orders = []
+            close_side = 'sell' if position_side == PositionSide.LONG else 'buy'
+
+            # 创建止损订单
+            if stop_loss:
+                sl_order = await self._create_stop_order(
+                    symbol=symbol,
+                    side=close_side,
+                    amount=position_amount,
+                    stop_price=float(stop_loss),
+                    position_side=position_side,
+                    order_type='STOP_MARKET'
+                )
+                if sl_order:
+                    new_orders.append({**sl_order, 'target_type': 'stop_loss'})
+
+            # 创建多重止盈订单
+            for i, tp in enumerate(take_profits):
+                # 计算该止盈目标的平仓数量
+                tp_amount = position_amount * (tp.percent / 100.0)
+
+                # 确保数量大于最小交易量 (这里简化处理，实际需要根据交易对精度调整)
+                if tp_amount < 0.0001:
+                    cprint(f"⚠️  止盈目标 {i+1} 数量太小，跳过: {tp_amount}", "yellow")
+                    continue
+
+                tp_order = await self._create_stop_order(
+                    symbol=symbol,
+                    side=close_side,
+                    amount=tp_amount,
+                    stop_price=float(tp.price),
+                    position_side=position_side,
+                    order_type='TAKE_PROFIT_MARKET'
+                )
+
+                if tp_order:
+                    new_orders.append({
+                        **tp_order,
+                        'target_type': 'take_profit',
+                        'target_index': i + 1,
+                        'percent': tp.percent,
+                        'new_stop_loss': float(tp.new_stop_loss) if tp.new_stop_loss else None
+                    })
+                    cprint(f"✅ 止盈目标 {i+1}: 价格=${float(tp.price):.2f}, 平仓{tp.percent}% ({tp_amount:.6f})", "green")
+
+            return ExecutionResult(
+                status=ExecutionStatus.SUCCESS,
+                action=TradingAction.MODIFY_SL_TP,
+                symbol=symbol,
+                message=f"成功设置多重止盈止损 (创建 {len(new_orders)} 个订单)",
+                raw_response={
+                    'new_orders': new_orders,
+                    'take_profit_targets': len(take_profits),
+                    'total_tp_percent': total_percent
+                },
+                timestamp=datetime.now(),
+            )
+
+        except Exception as e:
+            return self._build_error_result(
+                TradingAction.MODIFY_SL_TP,
+                position.get('symbol', ''),
+                "设置多重止盈止损失败",
+                str(e)
+            )
+
+    async def update_stop_loss_after_tp_trigger(
+        self,
+        symbol: str,
+        new_stop_loss: Decimal,
+    ) -> ExecutionResult:
+        """
+        止盈触发后更新止损价格
+
+        当某个止盈目标被触发后，需要更新止损价格以锁定利润。
+
+        Args:
+            symbol: 交易对
+            new_stop_loss: 新的止损价格
+
+        Returns:
+            ExecutionResult: 执行结果
+        """
+        try:
+            symbol = self._normalize_symbol(symbol)
+
+            # 获取当前持仓
+            position = await self.get_position(symbol)
+            if not position:
+                return self._build_error_result(
+                    TradingAction.MODIFY_SL_TP,
+                    symbol,
+                    "未找到持仓",
+                    "No position found"
+                )
+
+            # 取消现有止损订单
+            open_orders = await self._exchange.fetch_open_orders(symbol)
+            for order in open_orders:
+                order_type = order.get('type', '').upper()
+                if order_type in ['STOP_MARKET', 'STOP']:
+                    try:
+                        await self._exchange.cancel_order(order['id'], symbol)
+                        cprint(f"✅ 取消旧止损订单: {order['id']}", "green")
+                    except Exception as e:
+                        cprint(f"⚠️  取消止损订单失败: {str(e)}", "yellow")
+
+            # 创建新的止损订单
+            close_side = 'sell' if position.side == PositionSide.LONG else 'buy'
+            sl_order = await self._create_stop_order(
+                symbol=symbol,
+                side=close_side,
+                amount=float(position.amount),
+                stop_price=float(new_stop_loss),
+                position_side=position.side,
+                order_type='STOP_MARKET'
+            )
+
+            if sl_order:
+                cprint(f"✅ 止损价格已更新至 ${float(new_stop_loss):.2f}", "green")
+                return ExecutionResult(
+                    status=ExecutionStatus.SUCCESS,
+                    action=TradingAction.MODIFY_SL_TP,
+                    symbol=symbol,
+                    message=f"止损价格已更新至 ${float(new_stop_loss):.2f}",
+                    raw_response={'stop_loss_order': sl_order},
+                    timestamp=datetime.now(),
+                )
+            else:
+                return self._build_error_result(
+                    TradingAction.MODIFY_SL_TP,
+                    symbol,
+                    "创建新止损订单失败",
+                    "Failed to create new stop loss order"
+                )
+
+        except Exception as e:
+            return self._build_error_result(
+                TradingAction.MODIFY_SL_TP,
+                symbol,
+                "更新止损失败",
+                str(e)
+            )
 
     async def cancel_order(
         self,

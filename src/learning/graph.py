@@ -1,20 +1,19 @@
 """
 LangGraph 交易工作流
 """
+from datetime import datetime
 from typing import Dict, Optional, Union
 
-from datetime import datetime
-
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 from termcolor import cprint
 
-from .state import TradingState
-from .agents import TradingAgent
-from .memory import TradingMemory, TradingCase
-from ..engine.trading_engine import TradingEngine
 from ..engine.market_snapshot import MarketSnapshot
-from ..utils.config import LLMConfig
+from ..engine.trading_engine import TradingEngine
 from ..strategies import BaseStrategy, StrategyFactory
+from ..utils.config import LLMConfig
+from .agents import TradingAgent
+from .memory import TradingCase, TradingMemory
+from .state import TradingState
 
 
 class TradingWorkflowGraph:
@@ -79,7 +78,7 @@ class TradingWorkflowGraph:
             enable_vector_search=True,
         )
 
-        # 初始化 Trading Agent（使用策略的 prompt）
+        # 初始化 Trading Agent
         self.agent = TradingAgent(
             model_provider=llm_config.provider,
             model_id=llm_config.model,
@@ -174,48 +173,108 @@ class TradingWorkflowGraph:
         }
 
     async def get_recent_trades(self, state: TradingState) -> dict:
-        """节点2: 获取最近交易记录"""
+        """
+        节点2: 获取最近交易记录
+
+        优先级:
+        1. TradeHistoryManager 的已平仓持仓历史（系统内记录）
+        2. 交易所历史订单 API（按 order_id 聚合）
+        """
         cprint("\n📜 获取最近交易记录...", "cyan")
 
-        symbols = state.get('symbols', [])
-        all_trades = []
+        positions_data = []
 
         try:
-            # 遍历每个交易对获取交易记录
-            for symbol in symbols:
-                try:
-                    trades = await self.engine.adapter.get_trades(symbol=symbol, limit=10)
-                    for trade in trades:
-                        all_trades.append({
-                            'id': trade.trade_id,
-                            'order_id': trade.order_id,
-                            'symbol': trade.symbol,
-                            'side': trade.side.value if hasattr(trade.side, 'value') else str(trade.side),
-                            'trade_type': trade.trade_type,  # open/close/add/reduce
-                            'price': float(trade.price),
-                            'amount': float(trade.amount),
-                            'closed_pnl': float(trade.closed_pnl) if trade.closed_pnl else None,
-                            'fee': float(trade.fee) if trade.fee else None,
-                            'timestamp': trade.timestamp.isoformat() if trade.timestamp else None,
-                        })
-                except Exception as e:
-                    cprint(f"⚠️ 获取 {symbol} 交易记录失败: {e}", "yellow")
+            # 优先使用 TradeHistoryManager 获取已平仓持仓历史
+            if self.engine.trade_history:
+                closed_positions = self.engine.trade_history.get_closed_positions(days=7)
 
-            # 按时间排序，取最近 10 笔
-            all_trades.sort(key=lambda x: x.get('timestamp') or '', reverse=True)
-            trades_data = all_trades[:10]
+                for pos in closed_positions[:10]:  # 最近10笔
+                    positions_data.append({
+                        'position_id': pos.position_id,
+                        'symbol': pos.symbol,
+                        'side': pos.side,
+                        'trade_type': 'close',  # 已平仓
+                        'entry_price': float(pos.entry_price),
+                        'close_price': float(pos.close_price) if pos.close_price else None,
+                        'amount': float(pos.amount),
+                        'leverage': pos.leverage,
+                        'closed_pnl': float(pos.realized_pnl) if pos.realized_pnl else None,
+                        'pnl_percent': pos.realized_pnl_percent,
+                        'close_reason': pos.close_reason,  # manual/stop_loss/take_profit
+                        'entry_time': pos.entry_time.isoformat() if pos.entry_time else None,
+                        'close_time': pos.close_time.isoformat() if pos.close_time else None,
+                    })
 
-            if trades_data:
-                cprint(f"✅ 获取到 {len(trades_data)} 笔最近交易", "green")
-                self._print_recent_trades(trades_data)
+            # 如果没有本地记录，尝试从交易所获取历史订单
+            if not positions_data:
+                symbols = state.get('symbols', [])
+                positions_data = await self._fetch_order_history_from_exchange(symbols)
+
+            if positions_data:
+                cprint(f"✅ 获取到 {len(positions_data)} 笔交易记录", "green")
+                self._print_recent_trades(positions_data)
             else:
                 cprint("ℹ️ 暂无交易记录", "yellow")
 
-            return {'recent_trades': trades_data}
+            return {'recent_trades': positions_data}
 
         except Exception as e:
             cprint(f"⚠️ 获取交易记录失败: {e}", "yellow")
             return {'recent_trades': []}
+
+    async def _fetch_order_history_from_exchange(self, symbols: list) -> list:
+        """
+        从交易所获取历史订单并聚合
+
+        将同一订单的多个成交记录聚合为一条记录
+        """
+        aggregated_orders = []
+
+        try:
+            for symbol in symbols:
+                try:
+                    # 获取历史订单（已完成的）
+                    orders = await self.engine.adapter.get_order_history(symbol=symbol, limit=20)
+
+                    for order in orders:
+                        # 只处理已成交的订单
+                        if order.status.value not in ['closed', 'filled']:
+                            continue
+
+                        # 判断是开仓还是平仓
+                        is_reduce = order.reduce_only
+                        trade_type = 'close' if is_reduce else 'open'
+
+                        aggregated_orders.append({
+                            'order_id': order.order_id,
+                            'symbol': order.symbol,
+                            'side': order.side.value if hasattr(order.side, 'value') else str(order.side),
+                            'trade_type': trade_type,
+                            'entry_price': float(order.average_price) if order.average_price else float(order.price) if order.price else 0,
+                            'close_price': float(order.average_price) if is_reduce and order.average_price else None,
+                            'amount': float(order.filled) if order.filled else float(order.amount),
+                            'leverage': 1,  # 订单中没有杠杆信息
+                            'closed_pnl': None,  # 订单中没有盈亏信息
+                            'pnl_percent': None,
+                            'close_reason': 'manual' if is_reduce else None,
+                            'entry_time': order.created_at.isoformat() if order.created_at else None,
+                            'close_time': order.updated_at.isoformat() if is_reduce and order.updated_at else None,
+                        })
+
+                except Exception as e:
+                    cprint(f"⚠️ 获取 {symbol} 历史订单失败: {e}", "yellow")
+
+            # 按时间排序，取最近10笔
+            aggregated_orders.sort(
+                key=lambda x: x.get('entry_time') or x.get('close_time') or '',
+                reverse=True
+            )
+            return aggregated_orders[:10]
+
+        except Exception as e:
+            cprint(f"⚠️ 获取历史订单失败: {e}", "yellow")
+            return []
 
     async def retrieve_memory(self, state: TradingState) -> dict:
         """节点3: 检索历史记忆"""
@@ -622,45 +681,65 @@ class TradingWorkflowGraph:
 
     @staticmethod
     def _print_recent_trades(trades: list) -> None:
-        """打印最近交易记录"""
+        """打印最近交易记录（支持持仓历史和订单历史两种格式）"""
         if not trades:
             return
 
-        # 交易类型中文映射
-        trade_type_map = {
-            'open': '开仓',
+        # 平仓原因/交易类型中文映射
+        reason_map = {
+            'manual': '手动',
+            'stop_loss': '止损',
+            'take_profit': '止盈',
             'close': '平仓',
-            'add': '加仓',
-            'reduce': '减仓',
+            'open': '开仓',
         }
 
-        cprint(f"\n📜 最近 {len(trades)} 笔交易:", "cyan")
+        cprint(f"\n📜 最近 {len(trades)} 笔交易记录:", "cyan")
 
         for i, trade in enumerate(trades, 1):
             side = trade.get('side', 'N/A')
-            trade_type = trade.get('trade_type', 'N/A')
-            trade_type_cn = trade_type_map.get(trade_type, trade_type)
+            trade_type = trade.get('trade_type', 'close')
             closed_pnl = trade.get('closed_pnl')
+            pnl_percent = trade.get('pnl_percent')
+            close_reason = trade.get('close_reason') or trade_type
+            close_reason_cn = reason_map.get(close_reason, close_reason)
 
-            # 根据方向和类型决定颜色
-            if trade_type == 'close' and closed_pnl is not None:
+            # 根据盈亏决定颜色
+            if closed_pnl is not None:
                 color = "green" if closed_pnl >= 0 else "red"
+            elif trade_type == 'open':
+                color = "cyan"
             else:
-                color = "green" if side in ['buy', 'long'] else "red"
+                color = "white"
 
             # 标题行
-            cprint(f"\n  [{i}] {trade.get('symbol', 'N/A')} | {trade_type_cn} | {side.upper()}", color)
-            cprint(f"      价格: ${trade.get('price', 0):.2f}", "white")
+            cprint(f"\n  [{i}] {trade.get('symbol', 'N/A')} | {side.upper()} | {close_reason_cn}", color)
+
+            # 价格信息
+            entry_price = trade.get('entry_price', 0)
+            close_price = trade.get('close_price')
+
+            if trade_type == 'close' and close_price:
+                cprint(f"      入场价: ${entry_price:.2f} → 平仓价: ${close_price:.2f}", "white")
+            else:
+                cprint(f"      价格: ${entry_price:.2f}", "white")
+
             cprint(f"      数量: {trade.get('amount', 'N/A')}", "white")
 
-            # 如果是平仓，显示盈亏
+            leverage = trade.get('leverage', 1)
+            if leverage and leverage > 1:
+                cprint(f"      杠杆: {leverage}x", "white")
+
+            # 显示盈亏（仅平仓时）
             if trade_type == 'close' and closed_pnl is not None:
                 pnl_color = "green" if closed_pnl >= 0 else "red"
                 pnl_sign = "+" if closed_pnl >= 0 else ""
-                cprint(f"      盈亏: {pnl_sign}${closed_pnl:.2f}", pnl_color)
+                pnl_text = f"{pnl_sign}${closed_pnl:.2f}"
+                if pnl_percent is not None:
+                    pnl_text += f" ({pnl_sign}{pnl_percent:.2f}%)"
+                cprint(f"      盈亏: {pnl_text}", pnl_color)
 
-            if trade.get('fee'):
-                cprint(f"      手续费: ${trade.get('fee'):.4f}", "white")
-
-            if trade.get('timestamp'):
-                cprint(f"      时间: {trade.get('timestamp')}", "white")
+            # 时间信息
+            time_info = trade.get('close_time') or trade.get('entry_time')
+            if time_info:
+                cprint(f"      时间: {time_info}", "white")
