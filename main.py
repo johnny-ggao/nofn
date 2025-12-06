@@ -1,113 +1,220 @@
 """
-NOFN 自主交易系统 - 主程序
-"""
-import asyncio
-from dotenv import load_dotenv
-from termcolor import cprint
+NOFN Trading System - ValueCell Style Architecture
 
-from src.engine.trading_engine import TradingEngine
-from src.adapters.factory import AdapterFactory
-from src.learning.graph import TradingWorkflowGraph
-from src.utils import config
+Main entry point for the trading system.
+"""
+
+import argparse
+import asyncio
+import sys
+
+from dotenv import load_dotenv
+from loguru import logger
+
+from src.config import get_settings, load_dotenv as load_env
+from src.trading import (
+    ExchangeConfig,
+    LLMModelConfig,
+    MarginMode,
+    MarketType,
+    TradingConfig,
+    TradingMode,
+    UserRequest,
+)
+from src.strategy import StrategyAgent
+
+
+def setup_logging(level: str = "INFO"):
+    """Configure loguru logging."""
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level=level,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+    )
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="NOFN Trading System")
+    parser.add_argument(
+        "--template", "-t",
+        type=str,
+        default=None,
+        help="Strategy template: default, aggressive, insane, funding_rate (or path to custom template)",
+    )
+    parser.add_argument(
+        "--symbols", "-s",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Trading symbols (e.g., BTC/USDT:USDT ETH/USDT:USDT)",
+    )
+    parser.add_argument(
+        "--mode", "-m",
+        type=str,
+        choices=["live", "virtual"],
+        default=None,
+        help="Trading mode: live or virtual",
+    )
+    parser.add_argument(
+        "--interval", "-i",
+        type=int,
+        default=None,
+        help="Decision interval in seconds",
+    )
+    parser.add_argument(
+        "--list-templates",
+        action="store_true",
+        help="List available templates and exit",
+    )
+    parser.add_argument(
+        "--reflection", "-r",
+        action="store_true",
+        help="Enable reflection mode (自动分析历史表现并调整策略)",
+    )
+    return parser.parse_args()
+
+
+def create_user_request(args) -> UserRequest:
+    """Create user request from settings and command line args."""
+    settings = get_settings()
+
+    # Build LLM config from YAML + secrets
+    llm_config = LLMModelConfig(
+        provider=settings.llm.provider,
+        model_id=settings.llm.model,
+        api_key=settings.get_llm_api_key(),
+        base_url=settings.llm.base_url,
+        temperature=settings.llm.temperature,
+    )
+
+    # Build exchange config from YAML + secrets
+    trading_mode = (
+        TradingMode.LIVE
+        if settings.strategy.trading_mode.lower() == "live"
+        else TradingMode.VIRTUAL
+    )
+
+    market_type_map = {
+        "spot": MarketType.SPOT,
+        "future": MarketType.FUTURE,
+        "swap": MarketType.SWAP,
+    }
+    market_type = market_type_map.get(
+        settings.exchange.market_type.lower(),
+        MarketType.SWAP,
+    )
+
+    margin_mode_map = {
+        "isolated": MarginMode.ISOLATED,
+        "cross": MarginMode.CROSS,
+    }
+    margin_mode = margin_mode_map.get(
+        settings.exchange.margin_mode.lower(),
+        MarginMode.CROSS,
+    )
+
+    exchange_config = ExchangeConfig(
+        exchange_id=settings.exchange.id,
+        trading_mode=trading_mode,
+        api_key=settings.get_exchange_api_key(),
+        secret_key=settings.get_exchange_secret_key(),
+        passphrase=settings.get_exchange_passphrase(),
+        testnet=settings.exchange.testnet,
+        market_type=market_type,
+        margin_mode=margin_mode,
+    )
+
+    # Command line args override config file
+    template = args.template if args.template else settings.strategy.template
+    symbols = args.symbols if args.symbols else settings.strategy.symbols
+    decide_interval = args.interval if args.interval else settings.strategy.decide_interval
+
+    # Build trading config from YAML + command line overrides
+    trading_config = TradingConfig(
+        strategy_name=settings.strategy.name,
+        template_id=template,
+        symbols=symbols,
+        initial_capital=settings.strategy.initial_capital,
+        max_leverage=settings.strategy.max_leverage,
+        max_positions=settings.strategy.max_positions,
+        decide_interval=decide_interval,
+    )
+
+    return UserRequest(
+        llm_model_config=llm_config,
+        exchange_config=exchange_config,
+        trading_config=trading_config,
+    )
 
 
 async def main():
-    """主函数"""
+    """Main function."""
+    args = parse_args()
+
+    if args.list_templates:
+        from src.strategy import list_templates
+        logger.info("可用模板:")
+        for name in list_templates():
+            logger.info(f"  - {name}")
+        return
+
     load_dotenv()
+    load_env()
 
-    strategy_name = config.strategy.name
-    exchange = config.strategy.exchange
-    symbols = config.strategy.symbols
-    interval_seconds = config.strategy.interval_seconds
+    settings = get_settings()
+    setup_logging(settings.logging_config.level)
 
-    # 交易所配置
-    exchange_config = config.get_exchange_config(exchange)
+    template = args.template if args.template else settings.strategy.template
+    symbols = args.symbols if args.symbols else settings.strategy.symbols
+    mode = args.mode if args.mode else settings.strategy.trading_mode
+    interval = args.interval if args.interval else settings.strategy.decide_interval
 
-    cprint("\n" + "=" * 70, "cyan", attrs=["bold"])
-    cprint("🚀 NOFN 交易系统 (LangGraph)", "cyan", attrs=["bold"])
-    cprint("=" * 70, "cyan", attrs=["bold"])
-    cprint(f"\n📊 交易所: {exchange.upper()}", "white")
-    cprint(f"💰 监控币种: {', '.join(symbols)}", "white")
-    cprint(f"⏱️  循环间隔: {interval_seconds}秒 ({interval_seconds / 60:.1f}分钟)", "white")
-    cprint(f"🎯 交易策略: {strategy_name}", "white")
-    cprint(f"🤖 LLM: {config.llm.provider}/{config.llm.model}", "white")
-    cprint("")
+    logger.info("=" * 50)
+    logger.info("NOFN Trading System")
+    logger.info("=" * 50)
 
+    # 反思模式
+    enable_reflection = args.reflection
+
+    # Show configuration
+    logger.info(f"交易所: {settings.exchange.id.upper()}")
+    logger.info(f"交易对: {symbols}")
+    logger.info(f"策略模版: {template}")
+    logger.info(f"运行间隔: {interval}s")
+    logger.info(f"模式: {mode.upper()}")
+    logger.info(f"LLM: {settings.llm.provider}/{settings.llm.model}")
+    agent = None
     try:
-        # 1. 创建交易所适配器
-        cprint("🔧 初始化交易引擎...", "cyan")
-        cprint(f"   支持的交易所: {', '.join(AdapterFactory.list_available())}", "white")
-        cprint(f"   当前配置: {exchange}", "white")
+        # Create user request
+        request = create_user_request(args)
 
-        adapter = await AdapterFactory.create(
-            name=exchange,
-            api_key=exchange_config.api_key,
-            api_secret=exchange_config.api_secret,
-            testnet=exchange_config.testnet if hasattr(exchange_config, 'testnet') else False,
+        # Create and run agent
+        logger.info("正在初始化策略代理...")
+        agent = StrategyAgent(
+            request,
+            enable_reflection=enable_reflection,
         )
 
-        # 2. 创建交易引擎
-        engine = TradingEngine(adapter=adapter)
-        cprint("✅ 交易引擎初始化完成", "green")
+        strategy_id = await agent.start()
+        logger.success(f"策略已启动: {strategy_id}")
 
-        # 3. 创建工作流图（使用配置的策略）
-        cprint("\n📊 创建工作流图...", "cyan")
-        workflow = TradingWorkflowGraph(
-            engine=engine,
-            llm_config=config.llm,
-            strategy=strategy_name,
-        )
+        logger.info("=" * 50)
+        logger.info("开始交易循环")
+        logger.info("=" * 50)
 
-        # 4. 运行交易循环
-        cprint("\n" + "=" * 70, "green", attrs=["bold"])
-        cprint("▶️  开始交易循环", "green", attrs=["bold"])
-        cprint("=" * 70, "green", attrs=["bold"])
-        cprint("")
+        # Run the agent
+        await agent.run()
 
-        iteration = 0
-
-        while True:
-            try:
-                final_state = await workflow.run_iteration(
-                    symbols=symbols,
-                    iteration=iteration,
-                )
-
-                iteration += 1
-
-                # 显示状态摘要
-                cprint("\n" + "─" * 70, "white")
-                cprint("📊 本次迭代摘要:", "white", attrs=["bold"])
-                cprint(f"  决策类型: {final_state.get('decision', {}).get('decision_type', 'N/A')}", "white")
-                cprint(f"  执行结果: {len(final_state.get('execution_results', []))} 个", "white")
-                cprint(f"  质量评分: {final_state.get('quality_score', 'N/A')}", "white")
-                cprint(f"  学到的经验: {len(final_state.get('lessons_learned', []))} 条", "white")
-                cprint("─" * 70, "white")
-
-                cprint(f"\n⏳ 等待 {interval_seconds} 秒进入下一轮...\n", "cyan")
-                await asyncio.sleep(interval_seconds)
-
-            except KeyboardInterrupt:
-                cprint("\n⚠️  收到中断信号，正在停止...", "yellow")
-                break
-            except Exception as e:
-                cprint(f"\n❌ 迭代 {iteration} 执行失败: {e}", "red")
-                import traceback
-                traceback.print_exc()
-
-                await asyncio.sleep(60)
-
+    except KeyboardInterrupt:
+        logger.warning("收到中断信号，正在停止...")
+        if agent:
+            await agent.stop()
     except Exception as e:
-        cprint(f"\n❌ 系统初始化失败: {e}", "red")
-        import traceback
-        traceback.print_exc()
-
+        logger.exception(f"系统错误: {e}")
     finally:
-        if 'adapter' in locals():
-            cprint("\n🔧 关闭适配器...", "cyan")
-            await adapter.close()
-
-        cprint("\n👋 交易系统已停止\n", "yellow")
+        logger.warning("交易系统已停止")
 
 
 if __name__ == "__main__":

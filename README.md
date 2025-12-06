@@ -1,300 +1,255 @@
-# NOFN 自主交易系统
+# NOFN 量化交易系统
 
-## 🎯 基于 LangGraph 的透明交易系统
+基于 LLM 的智能量化交易系统，采用模块化架构设计。
 
-使用 LangGraph 构建的自主交易系统：
+## 核心特性
 
-- ✅ **更透明**: 每个节点都是纯函数，工作流程一目了然
-- ✅ **易于学习**: 使用标准的 LangChain 生态，不需要理解深层封装
-- ✅ **高度灵活**: 可以轻松添加/删除节点，自定义工作流
-- ✅ **易于调试**: 可以在任何节点查看状态，支持可视化
-- ✅ **代码更少**: 300 行 vs 900 行，更易维护
+- **LLM 驱动决策**: 使用大语言模型进行交易决策，支持多种 LLM 提供商
+- **策略模板**: 内置多种交易策略模板（稳健、激进、资金费率套利等）
+- **多时间框架分析**: 支持 MTF 技术指标（1H/15M/5M 多周期）
+- **反思模式**: 自动分析历史表现，动态调整策略参数
+- **实盘/模拟**: 支持真实交易和虚拟交易模式
 
-## 📁 项目结构
+## 项目结构
 
 ```
 nofn/
+├── main.py                 # 主程序入口
+├── config/
+│   └── config.yaml         # 配置文件
 ├── src/
-│   ├── learning/             # 学习系统 (LangGraph)
-│   │   ├── state.py          # 状态定义 (TypedDict)
-│   │   ├── memory.py         # 记忆系统 (SQLAlchemy)
-│   │   ├── agents.py         # Agent (LangChain)
-│   │   └── graph.py          # 工作流图 (LangGraph)
-│   │
-│   ├── engine/               # 交易引擎 (共用)
-│   ├── adapters/             # 交易所适配器 (共用)
-│   └── models/               # 数据模型 (共用)
-│
-├── main.py                   # 主程序启动文件
-├── backup_agno/              # Agno 版本备份
-├── MIGRATION_GUIDE.md        # 从 Agno 迁移指南
-└── LANGGRAPH_ADVANTAGES.md   # LangGraph 优势说明
+│   ├── config.py           # 配置管理
+│   ├── strategy/           # 策略层
+│   │   ├── agent.py        # 策略代理 (StrategyAgent)
+│   │   └── __init__.py
+│   └── trading/            # 交易核心
+│       ├── models.py       # 数据模型
+│       ├── engine.py       # 交易引擎 (StrategyRuntime, DecisionCoordinator)
+│       ├── market/         # 市场数据与特征
+│       │   ├── data_source.py      # CCXT 数据源
+│       │   ├── candle.py           # K线特征计算
+│       │   ├── mtf_candle.py       # 多时间框架指标
+│       │   ├── market_snapshot.py  # 行情快照
+│       │   └── pipeline.py         # 特征管道
+│       ├── decision/       # 决策模块
+│       │   ├── llm_composer.py     # LLM 决策器
+│       │   └── system_prompt.py    # 系统提示词
+│       ├── execution/      # 交易执行
+│       │   ├── ccxt_trading.py     # CCXT 实盘执行
+│       │   └── paper_trading.py    # 模拟交易
+│       ├── portfolio/      # 仓位管理
+│       ├── history/        # 历史记录与摘要
+│       ├── reflection/     # 反思模式
+│       │   ├── analyzer.py         # 表现分析器
+│       │   └── composer.py         # 反思决策器
+│       └── templates/      # 策略模板
+│           ├── default.txt
+│           ├── aggressive.txt
+│           ├── insane.txt
+│           └── funding_rate.txt
+└── tests/
+    └── test_new_architecture.py
 ```
 
-## 🚀 快速开始
+## 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-# 安装 LangGraph 相关依赖
-pip install -r requirements_langgraph.txt
+uv sync
 ```
 
-### 2. 配置环境变量
+### 2. 配置
 
-创建 `.env` 文件：
+复制并编辑配置文件：
 
 ```bash
-# Hyperliquid 配置
-HYPERLIQUID_ADDRESS=your_wallet_address
-HYPERLIQUID_SECRET=your_private_key
+cp config/config.yaml.example config/config.yaml
+```
 
-# OpenAI 配置
+创建 `.env` 文件配置敏感信息：
+
+```bash
+# 交易所 API
+BINANCE_API_KEY=your_api_key
+BINANCE_SECRET_KEY=your_secret_key
+
+# LLM API
+OPENROUTER_API_KEY=your_api_key
+# 或
 OPENAI_API_KEY=your_api_key
-OPENAI_BASE_URL=https://api.openai.com/v1  # 可选
 ```
 
 ### 3. 运行
 
 ```bash
+# 查看可用模板
+python main.py --list-templates
+
+# 使用默认配置运行
 python main.py
+
+# 指定模板和交易对
+python main.py -t aggressive -s BTC/USDT:USDT ETH/USDT:USDT
+
+# 启用反思模式
+python main.py --reflection
 ```
 
-## 🔄 工作流程图
+## 命令行参数
 
-```mermaid
-graph TD
-    Start[开始] --> GetData[获取市场数据]
-    GetData --> Memory[检索历史记忆]
-    Memory --> Decision[LLM 决策]
+| 参数 | 说明 |
+|------|------|
+| `-t, --template` | 策略模板: default, aggressive, insane, funding_rate |
+| `-s, --symbols` | 交易对列表，如 `BTC/USDT:USDT ETH/USDT:USDT` |
+| `-m, --mode` | 交易模式: live (实盘) 或 virtual (模拟) |
+| `-i, --interval` | 决策间隔（秒） |
+| `-r, --reflection` | 启用反思模式 |
+| `--list-templates` | 列出可用模板 |
 
-    Decision --> ShouldExecute{是否执行?}
+## 架构设计
 
-    ShouldExecute -->|有信号| Execute[执行交易]
-    ShouldExecute -->|无信号| Update[更新记忆]
+### 核心流程
 
-    Execute --> Evaluate[评估决策]
-    Evaluate --> Update
-    Update --> End[结束]
+```
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  Market     │ -> │  Decision   │ -> │  Execution  │
+│  (数据获取)  │    │  (LLM决策)   │    │  (交易执行)  │
+└─────────────┘    └─────────────┘    └─────────────┘
+       │                  │                  │
+       v                  v                  v
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  Features   │    │  Templates  │    │  Portfolio  │
+│  (特征计算)  │    │  (策略模板)  │    │  (仓位管理)  │
+└─────────────┘    └─────────────┘    └─────────────┘
 ```
 
-## 📚 核心组件
+### 模块说明
 
-### 1. TradingState (状态管理)
+| 模块 | 职责 |
+|------|------|
+| `strategy/` | 策略代理，编排交易循环 |
+| `trading/engine.py` | 交易引擎，协调各组件 |
+| `trading/market/` | 市场数据获取与特征计算 |
+| `trading/decision/` | LLM 决策器 |
+| `trading/execution/` | 订单执行（实盘/模拟） |
+| `trading/portfolio/` | 仓位与资金管理 |
+| `trading/history/` | 交易历史与表现摘要 |
+| `trading/reflection/` | 反思分析与策略调整 |
+
+## 策略模板
+
+### default (稳健顺势)
+
+- 顺势交易，只在明确趋势中开仓
+- 置信度要求 > 0.7
+- 适合中长线持仓
+
+### aggressive (激进动量)
+
+- 追逐短期动量
+- 置信度要求 > 0.6
+- 高频交易风格
+
+### insane (极端激进)
+
+- 最大化交易频率
+- 置信度要求 > 0.5
+- 高风险高收益
+
+### funding_rate (资金费率套利)
+
+- 专注资金费率套利
+- 在费率极端时开仓
+- 相对低风险策略
+
+## 反思模式
+
+启用 `--reflection` 后，系统会：
+
+1. **分析历史表现**: 计算夏普比、胜率、最大回撤等指标
+2. **识别问题模式**: 检测过度交易、连续亏损、单一标的集中等
+3. **动态调整**:
+   - 自动调整置信度阈值
+   - 过滤表现差的标的
+   - 严重问题时触发冷静期
+
+## 技术指标
+
+### 多时间框架 (MTF) 指标
+
+**1H 周期:**
+- EMA(7, 21, 55)
+- MACD(6, 13, 5)
+- RSI(14), ADX(14), ATR(14)
+- Bollinger Bands(20, 2)
+
+**15M 周期:**
+- EMA(8, 21, 50)
+- MACD(6, 13, 5)
+- RSI(14), Stochastic(14, 3, 3)
+- Volume ROC
+
+**5M 周期:**
+- EMA(8), RSI(9)
+- MACD(5, 10, 3)
+- Volume MA
+
+## 配置示例
+
+```yaml
+# config/config.yaml
+exchange:
+  id: binance
+  market_type: swap      # spot, future, swap
+  margin_mode: cross     # cross, isolated
+  testnet: false
+
+strategy:
+  name: "NOFN Strategy"
+  template: default
+  symbols:
+    - BTC/USDT:USDT
+    - ETH/USDT:USDT
+  trading_mode: virtual  # live, virtual
+  initial_capital: 10000
+  max_leverage: 3
+  max_positions: 5
+  decide_interval: 60
+
+llm:
+  provider: openrouter
+  model: deepseek/deepseek-chat
+  temperature: 0.3
+```
+
+## 开发
+
+### 运行测试
+
+```bash
+uv run pytest tests/ -v
+```
+
+### 添加新策略模板
+
+1. 在 `src/trading/templates/` 创建新的 `.txt` 文件
+2. 按照现有模板格式编写策略提示词
+3. 使用 `-t your_template` 运行
+
+### 自定义特征计算
+
+继承 `CandleBasedFeatureComputer` 实现自定义指标：
 
 ```python
-from src.learning.state import TradingState
-from typing import Annotated
-from operator import add
+from src.trading.market import CandleBasedFeatureComputer
 
-class TradingState(TypedDict, total=False):
-    """工作流状态"""
-    symbols: List[str]
-    market_snapshot: MarketSnapshot
-    decision: Dict[str, Any]
-    execution_results: List[Dict]
-
-    # 自动累积经验
-    lessons_learned: Annotated[List[str], add]
+class MyFeatureComputer(CandleBasedFeatureComputer):
+    def compute_features(self, candles, meta=None):
+        # 计算自定义指标
+        ...
 ```
 
-### 2. TradingMemory (记忆系统)
-
-```python
-from src.learning.memory import TradingMemory
-
-# 使用 SQLAlchemy ORM，易于理解和扩展
-memory = TradingMemory(db_path="data/trading_memory.db")
-
-# 添加案例
-memory.add_case(case)
-
-# 获取上下文
-context = memory.get_context(market_conditions, recent_days=7)
-```
-
-### 3. TradingAgent (LLM Agent)
-
-```python
-from src.learning.agents import TradingAgent
-
-# 直接使用 LangChain，没有额外封装
-agent = TradingAgent(
-    model_provider="openai",
-    model_id="gpt-4o-mini",
-    api_key=api_key,
-)
-
-# 决策
-decision = await agent.make_decision(market_snapshot, memory_context)
-
-# 评估
-evaluation = await agent.evaluate_and_learn(decision, results, account_info, snapshot)
-```
-
-### 4. TradingWorkflowGraph (工作流)
-
-```python
-from src.learning.graph import TradingWorkflowGraph
-
-# 创建工作流
-workflow = TradingWorkflowGraph(engine, agent, memory)
-
-# 运行一次迭代
-final_state = await workflow.run_iteration(symbols, iteration)
-```
-
-## 🔧 自定义工作流
-
-### 添加新节点非常简单
-
-```python
-# 在 graph.py 中添加新节点
-async def risk_check(self, state: TradingState) -> TradingState:
-    """风险检查节点"""
-    account = await self._get_account_info()
-
-    if account['balance']['available'] < 100:
-        state['warnings'].append("余额不足")
-        state['should_execute'] = False
-
-    return state
-
-# 在 _build_graph 中插入节点
-def _build_graph(self):
-    workflow = StateGraph(TradingState)
-
-    # 添加节点
-    workflow.add_node("risk_check", self.risk_check)
-
-    # 插入到工作流中
-    workflow.add_edge("retrieve_memory", "risk_check")
-    workflow.add_edge("risk_check", "make_decision")
-```
-
-## 📊 架构特点
-
-| 特性 | 实现方式 |
-|------|----------|
-| 工作流 | ✅ LangGraph StateGraph |
-| LLM 调用 | ✅ LangChain (透明可控) |
-| 数据库 | ✅ SQLAlchemy ORM |
-| 可视化 | ✅ Mermaid/PNG |
-| 调试 | ✅ 节点级调试 |
-| 扩展性 | ✅ 添加节点即可 |
-| 代码量 | ~300 行 (核心) |
-
-详细说明见 [LANGGRAPH_ADVANTAGES.md](./LANGGRAPH_ADVANTAGES.md)
-
-## 📖 文档
-
-- [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) - 从 Agno 迁移的详细指南
-- [LANGGRAPH_ADVANTAGES.md](./LANGGRAPH_ADVANTAGES.md) - LangGraph 优势深度对比
-- [LangGraph 官方文档](https://python.langchain.com/docs/langgraph)
-
-## 🎓 学习路径
-
-1. **理解状态管理**: 阅读 `src/learning/state.py`
-2. **理解节点**: 阅读 `src/learning/graph.py` 中的节点函数
-3. **理解边**: 查看 `_build_graph()` 中的边定义
-4. **自定义工作流**: 尝试添加新节点
-5. **可视化**: 导出 Mermaid 图查看工作流
-
-## 💡 最佳实践
-
-### 1. 每个节点应该是纯函数
-
-```python
-async def node_function(self, state: TradingState) -> TradingState:
-    """
-    接收 state，处理后返回更新的 state
-    不应该有副作用（除了必要的 I/O）
-    """
-    # 读取状态
-    data = state['some_data']
-
-    # 处理逻辑
-    result = await self.process(data)
-
-    # 更新状态
-    state['result'] = result
-
-    return state
-```
-
-### 2. 使用 Annotated 累积状态
-
-```python
-from typing import Annotated
-from operator import add
-
-class TradingState(TypedDict):
-    # 自动累积列表
-    lessons_learned: Annotated[List[str], add]
-```
-
-### 3. 使用条件边实现灵活路由
-
-```python
-workflow.add_conditional_edges(
-    "decision_node",
-    lambda s: "execute" if s['should_execute'] else "skip",
-    {
-        "execute": "execute_node",
-        "skip": "skip_node",
-    }
-)
-```
-
-## 🐛 调试技巧
-
-### 1. 打印每个节点的状态
-
-```python
-async def my_node(self, state: TradingState) -> TradingState:
-    print(f"节点开始 - 输入状态: {state.keys()}")
-
-    # 处理...
-
-    print(f"节点结束 - 输出状态: {state.keys()}")
-    return state
-```
-
-### 2. 添加调试节点
-
-```python
-def debug_node(state: TradingState) -> TradingState:
-    import pprint
-    pprint.pprint(state)
-    return state
-
-workflow.add_node("debug", debug_node)
-workflow.add_edge("make_decision", "debug")
-workflow.add_edge("debug", "execute_trades")
-```
-
-### 3. 导出并查看图结构
-
-```python
-mermaid_code = workflow.graph.get_graph().draw_mermaid()
-print(mermaid_code)
-```
-
-## 🚧 开发计划
-
-- [ ] 添加 Analyst Agent (深度分析节点)
-- [ ] 完善人工介入节点
-- [ ] 完善 WebSocket 实时数据节点
-- [ ] 添加风险管理节点
-- [ ] 支持多策略并行运行
-- [ ] 添加回测功能
-
-## 📝 许可证
+## 许可证
 
 MIT
-
-## 🙏 致谢
-
-- [LangGraph](https://python.langchain.com/docs/langgraph) - 工作流框架
-- [LangChain](https://python.langchain.com/) - LLM 工具链
-- [Hyperliquid](https://hyperliquid.xyz/) - 去中心化交易所
