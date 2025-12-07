@@ -145,12 +145,12 @@ def _extract_market_section(features: List) -> Dict:
 
 
 class LlmComposer(BaseComposer):
-    """LLM-driven composer using LangGraph/LangChain.
+    """使用 LangGraph/LangChain 的 LLM 驱动 Composer。
 
-    The core flow:
-    1. Build a serialized prompt from the compose context
-    2. Call LLM to obtain a TradePlanProposal
-    3. Normalize the proposal into executable TradeInstruction objects
+    核心流程:
+    1. 根据组合上下文构建序列化提示
+    2. 调用 LLM 获取 TradePlanProposal
+    3. 将提案规范化为可执行的 TradeInstruction 对象
     """
 
     def __init__(
@@ -163,15 +163,14 @@ class LlmComposer(BaseComposer):
         """Initialize LLM composer.
 
         Args:
-            request: User request with configuration
-            default_slippage_bps: Default slippage in basis points
-            quantity_precision: Minimum quantity precision
+            request: 用户的配置
+            default_slippage_bps: 默认滑点（单位：bp）
+            quantity_precision: 最小数量精度
         """
         self._request = request
         self._default_slippage_bps = default_slippage_bps
         self._quantity_precision = quantity_precision
 
-        # Create LLM
         cfg = self._request.llm_model_config
         self._llm = _create_llm(
             provider=cfg.provider,
@@ -181,7 +180,7 @@ class LlmComposer(BaseComposer):
             temperature=cfg.temperature,
         )
 
-        # JSON output parser
+        # JSON 输出解析器
         self._parser = JsonOutputParser()
 
     def _build_prompt_text(self) -> str:
@@ -267,20 +266,40 @@ class LlmComposer(BaseComposer):
         }
 
     def _build_history_section(self, context: ComposeContext) -> Optional[Dict]:
-        """Build history section from recent decisions.
+        """Build history section from recent decisions and historical summaries.
 
         Args:
-            context: Compose context containing recent_decisions
+            context: Compose context containing recent_decisions and history_summaries
 
         Returns:
             History section dict or None if no history
         """
-        if not context.recent_decisions and not context.pending_signals:
+        has_history = (
+            context.recent_decisions
+            or context.pending_signals
+            or context.history_summaries
+        )
+        if not has_history:
             return None
 
         history = {}
 
-        # 最近决策
+        # 历史摘要（长期记忆，先显示让LLM先了解历史背景）
+        if context.history_summaries:
+            summaries = []
+            for s in context.history_summaries:
+                entry = {
+                    "cycles": s.get("cycle_range"),
+                    "summary": s.get("content"),
+                }
+                # 添加统计信息
+                stats = s.get("stats")
+                if stats:
+                    entry["stats"] = stats
+                summaries.append(entry)
+            history["historical_summaries"] = summaries
+
+        # 最近决策（短期记忆）
         if context.recent_decisions:
             # 格式化最近决策，只保留关键信息
             recent = []
@@ -356,7 +375,8 @@ class LlmComposer(BaseComposer):
 
         instructions = (
             "阅读上下文并做出决策。"
-            "history = 最近的决策和执行结果，参考它保持决策连贯性。"
+            "history.historical_summaries = 历史决策摘要（长期记忆），了解过去的决策模式和教训。"
+            "history.recent_decisions = 最近的决策和执行结果（短期记忆），参考它保持决策连贯性。"
             "features.market_snapshot = 当前价格和指标。"
             "market.funding.rate：正值表示多头付给空头。"
             "遵守约束条件和风险标志。信号不明确时优先选择 noop（不操作）。"

@@ -643,7 +643,7 @@ async def create_strategy_runtime(
     Returns:
         初始化后的 StrategyRuntime
     """
-    # 创建执行网关
+    # 创建执行网关（交易所）
     execution_gateway = await create_execution_gateway(request.exchange_config)
 
     # LIVE 模式: 从交易所获取初始资金

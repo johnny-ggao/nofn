@@ -382,12 +382,18 @@ class CandleConfig(BaseModel):
 class Constraints(BaseModel):
     """Typed constraints model for runtime and composer."""
 
+    # 最大持仓数量
     max_positions: Optional[int] = Field(default=None)
+    # 最大杠杆
     max_leverage: Optional[float] = Field(default=None)
     quantity_step: Optional[float] = Field(default=None)
+    # 最小交易数量
     min_trade_qty: Optional[float] = Field(default=None)
+    # 最大订单数量
     max_order_qty: Optional[float] = Field(default=None)
+    # 最小名义价值
     min_notional: Optional[float] = Field(default=None)
+    # 最大仓位数量
     max_position_qty: Optional[float] = Field(default=None)
 
 
@@ -638,6 +644,11 @@ class ComposeContext(BaseModel):
     pending_signals: Dict[str, str] = Field(
         default_factory=dict,
         description="待观察的信号，如'等待回调再加仓'"
+    )
+    # 历史摘要（压缩的旧决策，用于长期记忆）
+    history_summaries: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="历史决策摘要，包含周期范围、统计和LLM生成的摘要内容"
     )
 
 

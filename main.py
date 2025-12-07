@@ -25,7 +25,7 @@ from src.strategy import StrategyAgent
 
 
 def setup_logging(level: str = "INFO"):
-    """Configure loguru logging."""
+    """配置 loguru 日志."""
     logger.remove()
     logger.add(
         sys.stderr,
@@ -35,7 +35,7 @@ def setup_logging(level: str = "INFO"):
 
 
 def parse_args():
-    """Parse command line arguments."""
+    """解析命令行参数."""
     parser = argparse.ArgumentParser(description="NOFN Trading System")
     parser.add_argument(
         "--template", "-t",
@@ -160,9 +160,11 @@ async def main():
             logger.info(f"  - {name}")
         return
 
+    # 记载环境变量
     load_dotenv()
     load_env()
 
+    # 读取配置文件
     settings = get_settings()
     setup_logging(settings.logging_config.level)
 
@@ -178,7 +180,6 @@ async def main():
     # 反思模式
     enable_reflection = args.reflection
 
-    # Show configuration
     logger.info(f"交易所: {settings.exchange.id.upper()}")
     logger.info(f"交易对: {symbols}")
     logger.info(f"策略模版: {template}")
@@ -187,10 +188,8 @@ async def main():
     logger.info(f"LLM: {settings.llm.provider}/{settings.llm.model}")
     agent = None
     try:
-        # Create user request
         request = create_user_request(args)
 
-        # Create and run agent
         logger.info("正在初始化策略代理...")
         agent = StrategyAgent(
             request,
