@@ -6,7 +6,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 import uuid
 
 from loguru import logger
@@ -91,6 +91,7 @@ class GraphDecisionCoordinator:
         digest_builder: BaseDigestBuilder,
         persistence_service: Optional[PersistenceService] = None,
         config: Optional[GraphCoordinatorConfig] = None,
+        summarize_callback: Optional[Callable] = None,
     ) -> None:
         self._request = request
         self.strategy_id = strategy_id
@@ -102,6 +103,7 @@ class GraphDecisionCoordinator:
         self._digest_builder = digest_builder
         self._persistence_service = persistence_service
         self._config = config or GraphCoordinatorConfig()
+        self._summarize_callback = summarize_callback
 
         self._symbols = list(dict.fromkeys(request.trading_config.symbols))
         self._realized_pnl: float = 0.0
@@ -191,6 +193,7 @@ class GraphDecisionCoordinator:
         self._graph = create_trading_graph(
             decide_callback=decide_callback,
             execute_callback=execute_callback,
+            summarize_callback=self._summarize_callback,
             checkpointer=checkpointer,
         )
 

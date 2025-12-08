@@ -131,6 +131,38 @@ def derive_side_from_action(action: Optional[TradeDecisionAction]) -> Optional[T
 # Configuration Models
 # =============================================================================
 
+class SummaryLLMConfig(BaseModel):
+    """LLM configuration for memory summarization (optional).
+
+    使用轻量级模型进行历史决策摘要，降低成本。
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="是否启用独立的摘要 LLM",
+    )
+    provider: str = Field(
+        default=DEFAULT_MODEL_PROVIDER,
+        description="Model provider for summarization",
+    )
+    model_id: str = Field(
+        default=DEFAULT_AGENT_MODEL,
+        description="Model identifier (recommend lightweight model)",
+    )
+    api_key: Optional[str] = Field(
+        default=None,
+        description="API key (if different from main LLM)",
+    )
+    base_url: Optional[str] = Field(
+        default=None,
+        description="Custom API base URL",
+    )
+    temperature: float = Field(
+        default=0.3,
+        description="Model temperature (lower for summarization)",
+    )
+
+
 class LLMModelConfig(BaseModel):
     """AI model configuration for strategy."""
 
@@ -155,6 +187,12 @@ class LLMModelConfig(BaseModel):
         description="Model temperature for generation",
     )
 
+    # 摘要 LLM 配置（可选）
+    summary_llm: Optional[SummaryLLMConfig] = Field(
+        default=None,
+        description="Optional separate LLM for summarization",
+    )
+
     @model_validator(mode="before")
     @classmethod
     def _fill_defaults(cls, data):
@@ -164,6 +202,36 @@ class LLMModelConfig(BaseModel):
         values.setdefault("provider", DEFAULT_MODEL_PROVIDER)
         values.setdefault("model_id", DEFAULT_AGENT_MODEL)
         return values
+
+    def get_summary_config(self) -> "SummaryLLMConfig":
+        """获取摘要 LLM 配置。
+
+        如果未配置独立的摘要 LLM，返回基于主 LLM 的配置。
+        """
+        if self.summary_llm and self.summary_llm.enabled:
+            # 使用独立的摘要 LLM
+            config = self.summary_llm
+            # 如果没有配置独立的 api_key，继承主 LLM 的
+            if not config.api_key:
+                return SummaryLLMConfig(
+                    enabled=True,
+                    provider=config.provider,
+                    model_id=config.model_id,
+                    api_key=self.api_key,
+                    base_url=config.base_url,
+                    temperature=config.temperature,
+                )
+            return config
+
+        # 返回基于主 LLM 的配置（但禁用状态）
+        return SummaryLLMConfig(
+            enabled=False,
+            provider=self.provider,
+            model_id=self.model_id,
+            api_key=self.api_key,
+            base_url=self.base_url,
+            temperature=0.3,
+        )
 
 
 class ExchangeConfig(BaseModel):
@@ -209,11 +277,24 @@ class ExchangeConfig(BaseModel):
         default=MarginMode.CROSS,
         description="Margin mode: isolated or cross",
     )
+    settle_coin: str = Field(
+        default="USDT",
+        description="Settlement coin for perpetual contracts (USDT or USDC)",
+    )
     fee_bps: float = Field(
         default=DEFAULT_FEE_BPS,
         description="Trading fee in basis points for paper trading",
         gt=0,
     )
+
+    @field_validator("settle_coin")
+    @classmethod
+    def validate_settle_coin(cls, v: str) -> str:
+        """Validate and normalize settle_coin."""
+        v = v.upper().strip()
+        if v not in ("USDT", "USDC", "USD", "BUSD"):
+            raise ValueError(f"settle_coin must be USDT, USDC, USD, or BUSD, got {v}")
+        return v
 
 
 class TradingConfig(BaseModel):
@@ -415,7 +496,7 @@ class PositionSnapshot(BaseModel):
 
 
 class PortfolioView(BaseModel):
-    """Portfolio state used by the composer for decision making."""
+    """Portfolio state used by the composer for decision-making."""
 
     strategy_id: Optional[str] = Field(default=None)
     ts: int
@@ -444,12 +525,20 @@ class TradeDecisionItem(BaseModel):
     instrument: InstrumentRef
     action: TradeDecisionAction
     target_qty: float = Field(
-        ...,
-        description="Operation size for this action (units)",
+        default=0.0,
+        description="Operation size for this action (units). Must be positive for actual operations.",
     )
     leverage: Optional[float] = Field(default=None)
     confidence: Optional[float] = Field(default=None, description="Confidence [0,1]")
     rationale: Optional[str] = Field(default=None)
+    sl_price: Optional[float] = Field(
+        default=None,
+        description="Stop loss price. For long: sl < entry, for short: sl > entry",
+    )
+    tp_price: Optional[float] = Field(
+        default=None,
+        description="Take profit price. For long: tp > entry, for short: tp < entry",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -498,6 +587,14 @@ class TradeInstruction(BaseModel):
     price_mode: PriceMode = Field(PriceMode.MARKET)
     limit_price: Optional[float] = Field(default=None)
     max_slippage_bps: Optional[float] = Field(default=None)
+    sl_price: Optional[float] = Field(
+        default=None,
+        description="Stop loss price to place after entry",
+    )
+    tp_price: Optional[float] = Field(
+        default=None,
+        description="Take profit price to place after entry",
+    )
     meta: Optional[Dict[str, Any]] = Field(default=None)
 
     @model_validator(mode="after")

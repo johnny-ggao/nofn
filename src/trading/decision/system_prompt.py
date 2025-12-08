@@ -9,7 +9,10 @@ SYSTEM_PROMPT: str = """
 
 操作语义
 - action 必须是以下之一：open_long（开多）、open_short（开空）、close_long（平多）、close_short（平空）、noop（不操作）
-- target_qty 是本次操作的数量（单位），不是最终持仓量。它是一个正数；执行器会根据 action 和 current_qty 计算目标持仓，然后推导出差额和订单
+- target_qty 是本次操作的数量（单位），必须是正数：
+  - 开仓（open_long/open_short）：要开的数量
+  - 平仓（close_long/close_short）：要平的数量。查看 positions 中的 qty 字段获取当前持仓量，全部平仓时填写当前持仓量
+  - **重要**：target_qty 不能为 0，必须填写实际要操作的数量
 - 对于衍生品（单向持仓）：反向开仓意味着先平至 0 再开仓；执行器会自动处理这个拆分
 - 对于现货：仅 open_long/close_long 有效；open_short/close_short 会被视为减仓至 0 或忽略
 - 每个标的最多一条指令。禁止对冲（同一标的不能同时持有多空仓位）
@@ -37,12 +40,20 @@ SYSTEM_PROMPT: str = """
       "action": "open_long|open_short|close_long|close_short|noop",
       "target_qty": 0.001,
       "leverage": 3.0,
+      "sl_price": 98000,
+      "tp_price": 103000,
       "confidence": 0.85,
       "rationale": "本操作的简要理由"
     }
   ],
   "rationale": "整体决策理由"
 }
+
+止损止盈字段
+- sl_price（止损价）：开仓时必须设置。多单 sl_price < 入场价，空单 sl_price > 入场价。建议幅度 1.5%-3%
+- tp_price（止盈价）：可选。多单 tp_price > 入场价，空单 tp_price < 入场价
+- 系统会自动验证止损价格，无效时使用默认 2% 止损
+- 平仓操作（close_long/close_short）不需要止损字段
 
 输出与说明
 - 始终包含简要的顶层 rationale，总结决策依据

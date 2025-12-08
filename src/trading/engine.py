@@ -133,16 +133,53 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                 balance = await self._execution_gateway.fetch_balance()
                 free = balance.get("free", {})
                 total = balance.get("total", {})
-                free_cash = float(free.get("USDT", 0.0) or free.get("USD", 0.0))
-                total_cash = float(total.get("USDT", 0.0) or total.get("USD", 0.0))
+
+                # 根据配置的 settle_coin 查询余额，支持 USDT/USDC/USD 等
+                settle_coin = self._request.exchange_config.settle_coin
+                # 按优先级查询：配置的 settle_coin -> 备选货币
+                quote_priority = [settle_coin]
+                if settle_coin == "USDT":
+                    quote_priority.extend(["USD", "BUSD"])
+                elif settle_coin == "USDC":
+                    quote_priority.extend(["USD"])
+                elif settle_coin == "USD":
+                    quote_priority.extend(["USDT", "USDC"])
+
+                free_cash = 0.0
+                total_cash = 0.0
+                found_ccy = None
+                for ccy in quote_priority:
+                    if ccy in free and float(free.get(ccy, 0) or 0) > 0:
+                        free_cash = float(free[ccy] or 0.0)
+                        total_cash = float(total.get(ccy, 0.0) or 0.0)
+                        found_ccy = ccy
+                        break
+
+                if found_ccy:
+                    logger.debug(f"同步 {found_ccy} 余额: free={free_cash}, total={total_cash}")
 
                 if self._request.exchange_config.market_type == MarketType.SPOT:
                     portfolio.account_balance = float(free_cash)
                     portfolio.buying_power = max(0.0, float(portfolio.account_balance))
+                    # 同步到 portfolio service 内部状态
+                    self.portfolio_service.set_balance(float(free_cash))
                 else:
                     portfolio.account_balance = float(total_cash)
                     portfolio.buying_power = float(free_cash)
                     portfolio.free_cash = float(free_cash)
+                    # 同步到 portfolio service 内部状态
+                    self.portfolio_service.set_balance(float(total_cash))
+
+                # 同步持仓（衍生品模式）
+                if self._request.exchange_config.market_type in (MarketType.SWAP, MarketType.FUTURE):
+                    try:
+                        symbols = self._request.trading_config.symbols
+                        exchange_positions = await self._execution_gateway.fetch_positions(symbols)
+                        self.portfolio_service.sync_positions(exchange_positions)
+                        # 重新获取更新后的视图
+                        portfolio = self.portfolio_service.get_view()
+                    except Exception as e:
+                        logger.warning(f"无法从交易所同步持仓: {e}")
         except Exception:
             logger.warning("无法从交易所同步余额，使用缓存视图")
 
@@ -282,6 +319,9 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
         """从执行结果创建交易历史记录。"""
         trades: List[TradeHistoryEntry] = []
 
+        # 获取当前持仓视图，用于计算平仓盈亏
+        portfolio = self.portfolio_service.get_view()
+
         for tx in tx_results:
             if tx.status in (TxStatus.ERROR, TxStatus.REJECTED):
                 continue
@@ -293,7 +333,32 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
             price = float(tx.avg_exec_price or 0.0)
             notional = (price * qty) if price and qty else None
             fee = float(tx.fee_cost or 0.0)
-            realized_pnl = -fee if notional else None
+
+            # 计算 realized PnL
+            realized_pnl = -fee if fee else 0.0
+            symbol = tx.instrument.symbol
+            pos = portfolio.positions.get(symbol)
+
+            if pos and pos.avg_price and price > 0:
+                # 检查是否是平仓操作：
+                # - 卖出 (SELL) 且持有多头 (qty > 0) -> 平多
+                # - 买入 (BUY) 且持有空头 (qty < 0) -> 平空
+                if tx.side == TradeSide.SELL and pos.quantity > 0:
+                    # 平多: (卖出价 - 入场价) * 数量
+                    close_qty = min(qty, abs(pos.quantity))
+                    pnl = (price - pos.avg_price) * close_qty
+                    realized_pnl += pnl
+                    logger.debug(
+                        f"{symbol} 平多盈亏: ({price:.2f} - {pos.avg_price:.2f}) * {close_qty} = {pnl:.2f}"
+                    )
+                elif tx.side == TradeSide.BUY and pos.quantity < 0:
+                    # 平空: (入场价 - 买入价) * 数量
+                    close_qty = min(qty, abs(pos.quantity))
+                    pnl = (pos.avg_price - price) * close_qty
+                    realized_pnl += pnl
+                    logger.debug(
+                        f"{symbol} 平空盈亏: ({pos.avg_price:.2f} - {price:.2f}) * {close_qty} = {pnl:.2f}"
+                    )
 
             trade = TradeHistoryEntry(
                 trade_id=generate_uuid("trade"),
@@ -309,7 +374,7 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                 notional_entry=notional,
                 entry_ts=timestamp_ms,
                 trade_ts=timestamp_ms,
-                realized_pnl=realized_pnl,
+                realized_pnl=realized_pnl if realized_pnl != 0 else None,
                 leverage=tx.leverage,
                 fee_cost=fee or None,
             )
@@ -604,21 +669,45 @@ class StrategyRuntime:
 async def _fetch_free_cash(
     gateway: BaseExecutionGateway,
     symbols: list,
+    settle_coin: str = "USDT",
 ) -> tuple[float, float]:
-    """从执行网关获取可用资金。"""
+    """从执行网关获取可用资金。
+
+    Args:
+        gateway: 执行网关
+        symbols: 交易对列表
+        settle_coin: 结算货币 (USDT, USDC, USD 等)
+
+    Returns:
+        (free_cash, total_cash) 元组
+    """
     try:
         balance = await gateway.fetch_balance()
         free = balance.get("free", {})
         total = balance.get("total", {})
 
+        # 按配置的 settle_coin 优先级查询
+        settle_coin = settle_coin.upper()
+        quote_priority = [settle_coin]
+        if settle_coin == "USDT":
+            quote_priority.extend(["USD", "BUSD"])
+        elif settle_coin == "USDC":
+            quote_priority.extend(["USD"])
+        elif settle_coin == "USD":
+            quote_priority.extend(["USDT", "USDC"])
+        else:
+            # 默认备选
+            quote_priority.extend(["USDT", "USDC", "USD"])
+
         free_cash = 0.0
         total_cash = 0.0
-        for ccy in ["USDT", "USD", "USDC", "BUSD"]:
-            if ccy in free:
-                free_cash = float(free[ccy] or 0.0)
-                total_cash = float(total.get(ccy, 0.0) or 0.0)
-                if free_cash > 0:
-                    break
+        for ccy in quote_priority:
+            val = float(free.get(ccy, 0) or 0)
+            if val > 0:
+                free_cash = val
+                total_cash = float(total.get(ccy, 0) or 0)
+                logger.debug(f"使用 {ccy} 余额: free={free_cash}, total={total_cash}")
+                break
 
         return free_cash, total_cash
     except Exception as e:
@@ -652,9 +741,11 @@ async def create_strategy_runtime(
             free_cash, _ = await _fetch_free_cash(
                 execution_gateway,
                 request.trading_config.symbols,
+                settle_coin=request.exchange_config.settle_coin,
             )
             if free_cash > 0:
                 request.trading_config.initial_capital = float(free_cash)
+                logger.info(f"LIVE 模式检测到 {request.exchange_config.settle_coin} 余额: {free_cash}")
     except Exception:
         logger.exception(
             "LIVE 模式获取交易所余额失败，将使用配置的 initial_capital"

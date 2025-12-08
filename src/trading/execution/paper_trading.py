@@ -28,6 +28,7 @@ class PaperExecutionGateway(BaseExecutionGateway):
         initial_balance: float = 10000.0,
         fee_bps: float = 10.0,
         slippage_bps: float = 5.0,
+        settle_coin: str = "USDT",
     ) -> None:
         """Initialize paper trading gateway.
 
@@ -35,11 +36,13 @@ class PaperExecutionGateway(BaseExecutionGateway):
             initial_balance: Starting balance in USD
             fee_bps: Trading fee in basis points (default 10 = 0.1%)
             slippage_bps: Simulated slippage in basis points (default 5 = 0.05%)
+            settle_coin: Settlement coin (USDT, USDC, etc.)
         """
         self._initial_balance = initial_balance
         self._balance = initial_balance
         self._fee_bps = fee_bps
         self._slippage_bps = slippage_bps
+        self._settle_coin = settle_coin.upper()
         self._positions: Dict[str, Dict] = {}
 
     async def execute(
@@ -207,9 +210,9 @@ class PaperExecutionGateway(BaseExecutionGateway):
     async def fetch_balance(self) -> Dict:
         """Fetch simulated account balance."""
         return {
-            "free": {"USDT": self._balance},
-            "used": {"USDT": 0.0},
-            "total": {"USDT": self._balance},
+            "free": {self._settle_coin: self._balance},
+            "used": {self._settle_coin: 0.0},
+            "total": {self._settle_coin: self._balance},
         }
 
     async def fetch_positions(self, symbols: Optional[List[str]] = None) -> List[Dict]:

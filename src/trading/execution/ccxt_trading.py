@@ -141,13 +141,8 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         if self.testnet:
             self._exchange.set_sandbox_mode(True)
 
-        # Set position mode if supported
-        try:
-            if self._exchange.has.get("setPositionMode"):
-                hedged = self.position_mode.lower() in ("hedged", "dual", "hedge")
-                await self._exchange.set_position_mode(hedged)
-        except Exception as e:
-            logger.warning(f"Could not set position mode: {e}")
+        # Set position mode if supported (futures only)
+        await self._ensure_position_mode()
 
         # Load markets
         try:
@@ -156,6 +151,57 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             raise RuntimeError(f"Failed to load markets for {self.exchange_id}: {e}") from e
 
         return self._exchange
+
+    async def _ensure_position_mode(self) -> None:
+        """确保持仓模式符合配置，仅在需要时设置。
+
+        检查当前持仓模式，如果已经是目标模式则跳过设置。
+        """
+        if not self._exchange:
+            return
+
+        # 检查交易所是否支持设置持仓模式
+        if not self._exchange.has.get("setPositionMode"):
+            return
+
+        # 现货不需要设置持仓模式
+        if self.default_type == "spot":
+            return
+
+        target_hedged = self.position_mode.lower() in ("hedged", "dual", "hedge")
+
+        # 尝试获取当前持仓模式
+        try:
+            # Binance: fetch_position_mode 返回 {"dualSidePosition": true/false}
+            if hasattr(self._exchange, "fapiPrivateGetPositionSideDual"):
+                result = await self._exchange.fapiPrivateGetPositionSideDual()
+                current_hedged = result.get("dualSidePosition", False)
+
+                if current_hedged == target_hedged:
+                    mode_name = "hedge" if current_hedged else "one-way"
+                    logger.debug(f"Position mode already set to {mode_name}, skipping")
+                    return
+
+                # 需要切换模式
+                logger.info(
+                    f"Switching position mode: {'one-way' if current_hedged else 'hedge'} -> "
+                    f"{'hedge' if target_hedged else 'one-way'}"
+                )
+        except Exception as e:
+            logger.debug(f"Could not fetch current position mode: {e}")
+
+        # 设置持仓模式
+        try:
+            await self._exchange.set_position_mode(target_hedged)
+            mode_name = "hedge" if target_hedged else "one-way"
+            logger.info(f"Position mode set to {mode_name}")
+        except Exception as e:
+            err_str = str(e)
+            # Binance -4059: 已经是目标模式
+            if "-4059" in err_str or "No need to change" in err_str:
+                logger.debug(f"Position mode already correct: {e}")
+            else:
+                logger.warning(f"Could not set position mode: {e}")
 
     def _normalize_symbol(self, symbol: str, market_type: Optional[str] = None) -> str:
         """Normalize symbol format for CCXT.
@@ -535,14 +581,29 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                     alt = f"{base}/{quote}:{quote}"
                     if alt in markets:
                         symbol = alt
-                    elif quote in ("USD", "USDT"):
-                        alt_quote = "USDT" if quote == "USD" else "USD"
-                        alt2 = f"{base}/{alt_quote}"
-                        alt3 = f"{base}/{alt_quote}:{alt_quote}"
-                        if alt2 in markets:
-                            symbol = alt2
-                        elif alt3 in markets:
-                            symbol = alt3
+                    elif quote in ("USD", "USDT", "USDC"):
+                        # Try alternative quote currencies
+                        # Priority: exact match > USDT > USDC > USD
+                        alt_quotes = []
+                        if quote == "USD":
+                            alt_quotes = ["USDT", "USDC"]
+                        elif quote == "USDT":
+                            alt_quotes = ["USD", "USDC"]
+                        elif quote == "USDC":
+                            alt_quotes = ["USD", "USDT"]
+
+                        found = False
+                        for alt_quote in alt_quotes:
+                            alt2 = f"{base}/{alt_quote}"
+                            alt3 = f"{base}/{alt_quote}:{alt_quote}"
+                            if alt2 in markets:
+                                symbol = alt2
+                                found = True
+                                break
+                            elif alt3 in markets:
+                                symbol = alt3
+                                found = True
+                                break
 
         # Setup leverage and margin mode for opening positions
         action = (inst.action.value if getattr(inst, "action", None) else None) or str(
@@ -737,6 +798,227 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             meta=inst.meta,
         )
 
+    async def _place_stop_loss_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        stop_price: float,
+        exchange: ccxt.Exchange,
+    ) -> Optional[Dict]:
+        """Place a stop loss order after entry.
+
+        Args:
+            symbol: Normalized symbol
+            side: 'buy' or 'sell' (opposite of position direction)
+            quantity: Position quantity to protect
+            stop_price: Trigger price for stop loss
+            exchange: CCXT exchange instance
+
+        Returns:
+            Order response dict or None if failed
+        """
+        try:
+            # Check if exchange supports stop orders
+            if not exchange.has.get("createOrder"):
+                logger.warning(f"{self.exchange_id} does not support createOrder")
+                return None
+
+            # Apply precision to stop price
+            _, stop_price = self._apply_exchange_specific_precision(
+                symbol, quantity, stop_price, exchange
+            )
+
+            # Build stop order params based on exchange
+            params: Dict = {}
+
+            if self.exchange_id == "binance":
+                # Binance uses STOP_MARKET for futures stop loss
+                order_type = "STOP_MARKET"
+                params["stopPrice"] = stop_price
+                params["reduceOnly"] = True
+                # closePosition=True will close entire position
+                # params["closePosition"] = True
+
+            elif self.exchange_id == "okx":
+                # OKX uses conditional orders
+                order_type = "market"
+                params["stopLossPrice"] = stop_price
+                params["tdMode"] = "isolated" if self.margin_mode == "isolated" else "cross"
+                params["reduceOnly"] = True
+
+            elif self.exchange_id == "bybit":
+                # Bybit uses conditional orders
+                order_type = "market"
+                params["triggerPrice"] = stop_price
+                params["triggerDirection"] = 2 if side == "sell" else 1  # 1=rise, 2=fall
+                params["reduce_only"] = True
+
+            elif self.exchange_id == "gate":
+                # Gate.io uses price_type for stop orders
+                order_type = "market"
+                params["stopPrice"] = stop_price
+                params["reduce_only"] = True
+
+            elif self.exchange_id == "hyperliquid":
+                # Hyperliquid uses trigger orders
+                order_type = "market"
+                params["triggerPrice"] = stop_price
+                params["reduceOnly"] = True
+
+            else:
+                # Generic fallback - may not work for all exchanges
+                order_type = "market"
+                params["stopPrice"] = stop_price
+                params["reduceOnly"] = True
+
+            logger.info(
+                f"Placing stop loss: {side} {quantity} {symbol} @ trigger {stop_price}"
+            )
+
+            # For Binance, use create_order with type=STOP_MARKET
+            if self.exchange_id == "binance":
+                order = await exchange.create_order(
+                    symbol=symbol,
+                    type=order_type,
+                    side=side,
+                    amount=quantity,
+                    price=None,  # Market order, no limit price
+                    params=params,
+                )
+            else:
+                # For other exchanges, try createStopOrder or create_order with params
+                if exchange.has.get("createStopOrder"):
+                    order = await exchange.create_stop_order(
+                        symbol=symbol,
+                        type="market",
+                        side=side,
+                        amount=quantity,
+                        price=stop_price,
+                        params=params,
+                    )
+                elif exchange.has.get("createStopLossOrder"):
+                    order = await exchange.create_stop_loss_order(
+                        symbol=symbol,
+                        type="market",
+                        side=side,
+                        amount=quantity,
+                        price=stop_price,
+                        params=params,
+                    )
+                else:
+                    # Fallback to regular create_order with stop params
+                    order = await exchange.create_order(
+                        symbol=symbol,
+                        type=order_type,
+                        side=side,
+                        amount=quantity,
+                        price=None,
+                        params=params,
+                    )
+
+            logger.info(
+                f"Stop loss order placed: id={order.get('id')}, status={order.get('status')}"
+            )
+            return order
+
+        except Exception as e:
+            logger.error(f"Failed to place stop loss for {symbol}: {e}")
+            return None
+
+    async def _place_take_profit_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        tp_price: float,
+        exchange: ccxt.Exchange,
+    ) -> Optional[Dict]:
+        """Place a take profit order after entry.
+
+        Args:
+            symbol: Normalized symbol
+            side: 'buy' or 'sell' (opposite of position direction)
+            quantity: Position quantity
+            tp_price: Trigger price for take profit
+            exchange: CCXT exchange instance
+
+        Returns:
+            Order response dict or None if failed
+        """
+        try:
+            if not exchange.has.get("createOrder"):
+                return None
+
+            _, tp_price = self._apply_exchange_specific_precision(
+                symbol, quantity, tp_price, exchange
+            )
+
+            params: Dict = {}
+
+            if self.exchange_id == "binance":
+                order_type = "TAKE_PROFIT_MARKET"
+                params["stopPrice"] = tp_price
+                params["reduceOnly"] = True
+
+            elif self.exchange_id == "okx":
+                order_type = "market"
+                params["takeProfitPrice"] = tp_price
+                params["tdMode"] = "isolated" if self.margin_mode == "isolated" else "cross"
+                params["reduceOnly"] = True
+
+            elif self.exchange_id == "bybit":
+                order_type = "market"
+                params["triggerPrice"] = tp_price
+                params["triggerDirection"] = 1 if side == "sell" else 2
+                params["reduce_only"] = True
+
+            else:
+                order_type = "market"
+                params["stopPrice"] = tp_price
+                params["reduceOnly"] = True
+
+            logger.info(
+                f"Placing take profit: {side} {quantity} {symbol} @ trigger {tp_price}"
+            )
+
+            if self.exchange_id == "binance":
+                order = await exchange.create_order(
+                    symbol=symbol,
+                    type=order_type,
+                    side=side,
+                    amount=quantity,
+                    price=None,
+                    params=params,
+                )
+            elif exchange.has.get("createTakeProfitOrder"):
+                order = await exchange.create_take_profit_order(
+                    symbol=symbol,
+                    type="market",
+                    side=side,
+                    amount=quantity,
+                    price=tp_price,
+                    params=params,
+                )
+            else:
+                order = await exchange.create_order(
+                    symbol=symbol,
+                    type=order_type,
+                    side=side,
+                    amount=quantity,
+                    price=None,
+                    params=params,
+                )
+
+            logger.info(
+                f"Take profit order placed: id={order.get('id')}, status={order.get('status')}"
+            )
+            return order
+
+        except Exception as e:
+            logger.error(f"Failed to place take profit for {symbol}: {e}")
+            return None
+
     async def _exec_open_long(
         self, inst: TradeInstruction, exchange: ccxt.Exchange
     ) -> TxResult:
@@ -744,7 +1026,39 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             overrides = {"reduce_only": False}
         else:
             overrides = {"reduceOnly": False}
-        return await self._submit_order(inst, exchange, overrides)
+
+        # Execute the entry order
+        result = await self._submit_order(inst, exchange, overrides)
+
+        # If entry successful and stop loss is specified, place SL order
+        if result.status == TxStatus.FILLED and result.filled_qty > 0:
+            symbol = self._normalize_symbol(inst.instrument.symbol)
+
+            logger.info(
+                f"开多仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
+            )
+
+            # Place stop loss (sell to close long)
+            if inst.sl_price:
+                await self._place_stop_loss_order(
+                    symbol=symbol,
+                    side="sell",
+                    quantity=result.filled_qty,
+                    stop_price=inst.sl_price,
+                    exchange=exchange,
+                )
+
+            # Place take profit (sell to close long)
+            if inst.tp_price:
+                await self._place_take_profit_order(
+                    symbol=symbol,
+                    side="sell",
+                    quantity=result.filled_qty,
+                    tp_price=inst.tp_price,
+                    exchange=exchange,
+                )
+
+        return result
 
     async def _exec_open_short(
         self, inst: TradeInstruction, exchange: ccxt.Exchange
@@ -753,7 +1067,80 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             overrides = {"reduce_only": False}
         else:
             overrides = {"reduceOnly": False}
-        return await self._submit_order(inst, exchange, overrides)
+
+        # Execute the entry order
+        result = await self._submit_order(inst, exchange, overrides)
+
+        # If entry successful and stop loss is specified, place SL order
+        if result.status == TxStatus.FILLED and result.filled_qty > 0:
+            symbol = self._normalize_symbol(inst.instrument.symbol)
+
+            logger.info(
+                f"开空仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
+            )
+
+            # Place stop loss (buy to close short)
+            if inst.sl_price:
+                await self._place_stop_loss_order(
+                    symbol=symbol,
+                    side="buy",
+                    quantity=result.filled_qty,
+                    stop_price=inst.sl_price,
+                    exchange=exchange,
+                )
+
+            # Place take profit (buy to close short)
+            if inst.tp_price:
+                await self._place_take_profit_order(
+                    symbol=symbol,
+                    side="buy",
+                    quantity=result.filled_qty,
+                    tp_price=inst.tp_price,
+                    exchange=exchange,
+                )
+
+        return result
+
+    async def _cancel_open_orders_for_symbol(
+        self, symbol: str, exchange: ccxt.Exchange
+    ) -> int:
+        """Cancel all open orders (including SL/TP) for a symbol.
+
+        Args:
+            symbol: Normalized symbol (e.g., 'BTC/USDC:USDC')
+            exchange: CCXT exchange instance
+
+        Returns:
+            Number of orders cancelled
+        """
+        cancelled_count = 0
+        try:
+            # Fetch all open orders for the symbol
+            open_orders = await exchange.fetch_open_orders(symbol)
+
+            if not open_orders:
+                logger.debug(f"No open orders to cancel for {symbol}")
+                return 0
+
+            logger.info(f"Found {len(open_orders)} open orders for {symbol}, cancelling...")
+
+            for order in open_orders:
+                order_id = order.get("id")
+                order_type = order.get("type", "unknown")
+                order_side = order.get("side", "unknown")
+                try:
+                    await exchange.cancel_order(order_id, symbol)
+                    cancelled_count += 1
+                    logger.info(
+                        f"Cancelled order {order_id}: {order_type} {order_side}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to cancel order {order_id}: {e}")
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch/cancel open orders for {symbol}: {e}")
+
+        return cancelled_count
 
     async def _exec_close_long(
         self, inst: TradeInstruction, exchange: ccxt.Exchange
@@ -762,7 +1149,16 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             overrides = {"reduce_only": True}
         else:
             overrides = {"reduceOnly": True}
-        return await self._submit_order(inst, exchange, overrides)
+
+        # Execute the close order
+        result = await self._submit_order(inst, exchange, overrides)
+
+        # If close was successful, cancel any pending SL/TP orders for this symbol
+        if result.status == TxStatus.FILLED and result.filled_qty > 0:
+            symbol = self._normalize_symbol(inst.instrument.symbol)
+            await self._cancel_open_orders_for_symbol(symbol, exchange)
+
+        return result
 
     async def _exec_close_short(
         self, inst: TradeInstruction, exchange: ccxt.Exchange
@@ -771,7 +1167,16 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             overrides = {"reduce_only": True}
         else:
             overrides = {"reduceOnly": True}
-        return await self._submit_order(inst, exchange, overrides)
+
+        # Execute the close order
+        result = await self._submit_order(inst, exchange, overrides)
+
+        # If close was successful, cancel any pending SL/TP orders for this symbol
+        if result.status == TxStatus.FILLED and result.filled_qty > 0:
+            symbol = self._normalize_symbol(inst.instrument.symbol)
+            await self._cancel_open_orders_for_symbol(symbol, exchange)
+
+        return result
 
     async def _exec_noop(self, inst: TradeInstruction) -> TxResult:
         side = (

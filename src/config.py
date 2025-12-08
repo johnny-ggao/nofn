@@ -142,6 +142,16 @@ class SecretsSettings(BaseSettings):
 # ============================================================================
 
 
+class SummaryLLMConfig(BaseModel):
+    """Summary LLM configuration (optional, for memory summarization)."""
+
+    enabled: bool = False  # 是否启用独立的摘要 LLM
+    provider: str = "openrouter"
+    model: str = "deepseek/deepseek-chat"  # 推荐使用轻量模型
+    base_url: Optional[str] = None
+    temperature: float = 0.3
+
+
 class LLMConfig(BaseModel):
     """LLM configuration from YAML."""
 
@@ -149,6 +159,9 @@ class LLMConfig(BaseModel):
     model: str = "deepseek/deepseek-chat"
     base_url: Optional[str] = None
     temperature: float = 0.4
+
+    # 摘要 LLM 配置（可选）
+    summary: Optional[SummaryLLMConfig] = None
 
 
 class ExchangeConfig(BaseModel):
@@ -158,6 +171,7 @@ class ExchangeConfig(BaseModel):
     testnet: bool = False
     market_type: str = "swap"  # spot, future, swap
     margin_mode: str = "cross"  # cross, isolated
+    settle_coin: str = "USDT"  # USDT, USDC, USD
 
 
 class StrategyConfig(BaseModel):
@@ -167,8 +181,8 @@ class StrategyConfig(BaseModel):
     template: str = "default"  # Template name: default, aggressive, insane, funding_rate
     symbols: List[str] = Field(default_factory=lambda: ["BTC/USDT:USDT", "ETH/USDT:USDT"])
     initial_capital: float = 10000.0
-    max_leverage: float = 3.0
-    max_positions: int = 5
+    max_leverage: float = 10.0
+    max_positions: int = 3
     decide_interval: int = 60
     trading_mode: str = "virtual"  # virtual, live
 

@@ -21,7 +21,7 @@ BUILTIN_TEMPLATES = {
     "default": "default.txt",
     "aggressive": "aggressive.txt",
     "insane": "insane.txt",
-    "funding_rate": "funding_rate.txt",
+    "nof1": "nof1.txt",
 }
 
 

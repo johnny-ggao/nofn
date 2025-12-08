@@ -6,19 +6,19 @@ structured LLM outputs instead of Agno.
 
 from __future__ import annotations
 
+import asyncio
 import json
-import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import JsonOutputParser
-from langchain_openai import ChatOpenAI
 from loguru import logger
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from ..models import (
     ComposeContext,
     ComposeResult,
+    FeatureVector,
     InstrumentRef,
     PriceMode,
     TradeDecisionAction,
@@ -32,6 +32,7 @@ from ..models import (
 )
 from .interfaces import BaseComposer
 from .system_prompt import SYSTEM_PROMPT
+from .llm_factory import create_llm, create_llm_from_config
 
 # Import template loader
 from ..templates import (
@@ -40,68 +41,37 @@ from ..templates import (
 )
 
 
-def _create_llm(
-    provider: str,
-    model_id: str,
-    api_key: Optional[str] = None,
-    base_url: Optional[str] = None,
-    temperature: float = 0.4,
-) -> ChatOpenAI:
-    """Create LLM instance based on provider.
+class SingleSymbolDecision(BaseModel):
+    """单个交易对的 LLM 决策输出。"""
 
-    Supports:
-    - openai: Direct OpenAI API
-    - openrouter: OpenRouter API (OpenAI-compatible)
-    - deepseek: DeepSeek API
-    - qwen/dashscope: Alibaba Qwen API
-
-    Args:
-        provider: Model provider name
-        model_id: Model identifier
-        api_key: API key (falls back to environment variables)
-        base_url: Custom API base URL (falls back to provider defaults)
-        temperature: Model temperature
-    """
-    # Resolve API key from environment if not provided
-    if not api_key:
-        env_key_map = {
-            "openai": "OPENAI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-            "deepseek": "DEEPSEEK_API_KEY",
-            "qwen": "DASHSCOPE_API_KEY",
-            "dashscope": "DASHSCOPE_API_KEY",
-            "anthropic": "ANTHROPIC_API_KEY",
-        }
-        env_key = env_key_map.get(provider.lower())
-        if env_key:
-            api_key = os.getenv(env_key)
-
-    if not api_key:
-        raise ValueError(
-            f"API key not provided for provider '{provider}'. "
-            f"Set it in config or via environment variable."
-        )
-
-    # Configure base URL - use provided value or fall back to provider defaults
-    if not base_url:
-        default_urls = {
-            "openrouter": "https://openrouter.ai/api/v1",
-            "deepseek": "https://api.deepseek.com",
-            "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-        }
-        base_url = default_urls.get(provider.lower())
-
-    # Create LLM
-    kwargs: Dict[str, Any] = {
-        "model": model_id,
-        "temperature": temperature,
-        "api_key": api_key,
-    }
-    if base_url:
-        kwargs["base_url"] = base_url
-
-    return ChatOpenAI(**kwargs)
+    action: str = Field(
+        ...,
+        description="操作类型: open_long|open_short|close_long|close_short|noop",
+    )
+    target_qty: float = Field(
+        default=0.0,
+        description="操作数量（正数）",
+    )
+    leverage: float = Field(
+        default=3.0,
+        description="杠杆倍数",
+    )
+    sl_price: Optional[float] = Field(
+        default=None,
+        description="止损价格",
+    )
+    tp_price: Optional[float] = Field(
+        default=None,
+        description="止盈价格",
+    )
+    confidence: float = Field(
+        default=0.5,
+        description="置信度 [0, 1]",
+    )
+    rationale: str = Field(
+        default="",
+        description="决策理由",
+    )
 
 
 def _prune_none(d: Dict) -> Dict:
@@ -171,14 +141,8 @@ class LlmComposer(BaseComposer):
         self._default_slippage_bps = default_slippage_bps
         self._quantity_precision = quantity_precision
 
-        cfg = self._request.llm_model_config
-        self._llm = _create_llm(
-            provider=cfg.provider,
-            model_id=cfg.model_id,
-            api_key=cfg.api_key,
-            base_url=cfg.base_url,
-            temperature=cfg.temperature,
-        )
+        # 使用工厂函数创建 LLM
+        self._llm = create_llm_from_config(self._request.llm_model_config)
 
         # JSON 输出解析器
         self._parser = JsonOutputParser()
@@ -229,12 +193,36 @@ class LlmComposer(BaseComposer):
         """Compose trading instructions from context."""
         prompt = self._build_llm_prompt(context)
 
+        # 格式化打印 prompt (美化 JSON 输出)
+        try:
+            import json as json_module
+            prompt_data = json_module.loads(prompt.split("Context:\n")[1]) if "Context:\n" in prompt else None
+            logger.info("=" * 80)
+            logger.info("LLM Prompt:")
+            logger.info("=" * 80)
+            # 打印指令部分
+            instructions_part = prompt.split("Context:\n")[0] if "Context:\n" in prompt else ""
+            for line in instructions_part.strip().split("\n"):
+                logger.info(line)
+            # 美化打印 JSON 上下文
+            # if prompt_data:
+            #     logger.info("-" * 80)
+            #     logger.info("Context (formatted):")
+            #     logger.info("-" * 80)
+            #     formatted_json = json_module.dumps(prompt_data, indent=2, ensure_ascii=False)
+            #     for line in formatted_json.split("\n"):
+            #         logger.info(line)
+            # logger.info("=" * 80)
+        except Exception:
+            # 回退到简单打印
+            logger.info(f"LLM Prompt:\n{prompt}")
+
         try:
             plan = await self._call_llm(prompt)
             if not plan.items:
                 logger.info(
-                    f"LLM returned empty plan for compose_id={context.compose_id} "
-                    f"with rationale={plan.rationale}"
+                    f"LLM 返回空的执行计划 compose_id={context.compose_id} "
+                    f"依据={plan.rationale}"
                 )
                 return ComposeResult(instructions=[], rationale=plan.rationale)
         except Exception as exc:
@@ -373,71 +361,80 @@ class LlmComposer(BaseComposer):
             }
         )
 
+        # 提取交易对列表
+        symbols = list(market.keys())
+
         instructions = (
-            "阅读上下文并做出决策。"
-            "history.historical_summaries = 历史决策摘要（长期记忆），了解过去的决策模式和教训。"
-            "history.recent_decisions = 最近的决策和执行结果（短期记忆），参考它保持决策连贯性。"
-            "features.market_snapshot = 当前价格和指标。"
-            "market.funding.rate：正值表示多头付给空头。"
-            "遵守约束条件和风险标志。信号不明确时优先选择 noop（不操作）。"
-            "始终在顶层包含简洁的 rationale（决策理由）。"
-            "若选择 noop（items 为空），需在 rationale 中说明原因。"
-            "按照输出格式要求，输出包含 items 数组的 JSON。"
+            "阅读上下文并为每个交易对分别进行独立分析和决策。\n\n"
+            f"待分析交易对: {symbols}\n\n"
+            "分析要求:\n"
+            "1. 对每个交易对进行独立的技术分析，不要混合分析\n"
+            "2. 每个交易对的 rationale 必须包含该交易对的完整分析过程:\n"
+            "   - 当前价格和涨跌幅\n"
+            "   - 技术指标分析 (EMA、MACD、RSI 等)\n"
+            "   - 资金费率评估\n"
+            "   - 持仓情况（如有）\n"
+            "   - 入场/出场信号判断\n"
+            "   - 最终决策理由\n"
+            "3. 即使选择 noop，也要在 rationale 中说明为何不操作\n\n"
+            "上下文说明:\n"
+            "- history.historical_summaries = 历史决策摘要（长期记忆）\n"
+            "- history.recent_decisions = 最近的决策和执行结果（短期记忆）\n"
+            "- features.market_snapshot = 当前价格和指标\n"
+            "- market.funding.rate: 正值表示多头付给空头\n\n"
+            "遵守约束条件。输出包含 items 数组的 JSON，每个交易对一个 item。"
         )
 
         return f"{instructions}\n\nContext:\n{json.dumps(payload, ensure_ascii=False)}"
 
     async def _call_llm(self, prompt: str) -> TradePlanProposal:
-        """Invoke LLM and parse response into TradePlanProposal."""
+        """调用 LLM 获取结构化交易计划。
+
+        使用 with_structured_output() 直接获取 Pydantic 模型。
+        """
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ]
 
         try:
-            response = await self._llm.ainvoke(messages)
-            content = response.content
+            structured_llm = self._llm.with_structured_output(TradePlanProposal)
+            result = await structured_llm.ainvoke(messages)
 
-            # Parse JSON from response
-            if isinstance(content, str):
-                # Try to extract JSON from response
-                try:
-                    # Handle markdown code blocks
-                    if "```json" in content:
-                        start = content.find("```json") + 7
-                        end = content.find("```", start)
-                        content = content[start:end].strip()
-                    elif "```" in content:
-                        start = content.find("```") + 3
-                        end = content.find("```", start)
-                        content = content[start:end].strip()
+            # 打印 LLM 决策结果
+            logger.info("=" * 60)
+            logger.info("LLM 决策结果:")
+            logger.info("=" * 60)
+            if isinstance(result, TradePlanProposal):
+                for i, item in enumerate(result.items):
+                    logger.info(
+                        f"[{i+1}] {item.instrument.symbol}: {item.action.value} "
+                        f"qty={item.target_qty} leverage={item.leverage} "
+                        f"confidence={item.confidence} sl={item.sl_price} tp={item.tp_price}"
+                    )
+                    logger.info(f"    理由: {item.rationale[:100] if item.rationale else 'N/A'}...")
+                logger.info(f"整体决策: {result.rationale[:200] if result.rationale else 'N/A'}...")
+            elif isinstance(result, dict):
+                logger.info(f"Raw dict: {json.dumps(result, ensure_ascii=False, indent=2)[:500]}")
+            logger.info("=" * 60)
 
-                    parsed = json.loads(content)
-                except json.JSONDecodeError:
-                    # Try to find JSON object in text
-                    import re
-                    match = re.search(r'\{[\s\S]*\}', content)
-                    if match:
-                        parsed = json.loads(match.group())
-                    else:
-                        logger.error(f"Could not parse JSON from LLM response: {content[:200]}")
-                        return TradePlanProposal(
-                            items=[],
-                            rationale=f"Failed to parse LLM response as JSON",
-                        )
-
-                # Validate and convert to TradePlanProposal
+            # 确保返回正确类型
+            if isinstance(result, TradePlanProposal):
+                result.ts = get_current_timestamp_ms()
+                return result
+            elif isinstance(result, dict):
                 return TradePlanProposal(
                     ts=get_current_timestamp_ms(),
                     items=[
                         TradeDecisionItem(**item)
-                        for item in parsed.get("items", [])
+                        for item in result.get("items", [])
                     ],
-                    rationale=parsed.get("rationale"),
+                    rationale=result.get("rationale"),
                 )
-            else:
-                logger.error(f"Unexpected LLM response type: {type(content)}")
-                return TradePlanProposal(items=[], rationale="Unexpected response type")
+
+            # 不应该到达这里
+            logger.error(f"Unexpected result type: {type(result)}")
+            return TradePlanProposal(items=[], rationale="Unexpected result type")
 
         except ValidationError as e:
             logger.error(f"Validation error parsing LLM response: {e}")
@@ -448,6 +445,115 @@ class LlmComposer(BaseComposer):
         except Exception as e:
             logger.error(f"Error calling LLM: {e}")
             raise
+
+    # 默认止损百分比（用于开仓时 LLM 未给出止损价的情况）
+    DEFAULT_SL_PCT = 0.02  # 2%
+    # 止损范围限制
+    MIN_SL_PCT = 0.005  # 0.5%
+    MAX_SL_PCT = 0.10   # 10%
+
+    def _validate_sl_price(
+        self,
+        sl_price: Optional[float],
+        entry_price: float,
+        is_long: bool,
+    ) -> Optional[float]:
+        """Validate and normalize stop loss price.
+
+        Args:
+            sl_price: LLM-provided stop loss price (may be None or invalid)
+            entry_price: Expected entry price
+            is_long: True for long position, False for short
+
+        Returns:
+            Validated sl_price, or default if invalid/missing
+        """
+        if entry_price <= 0:
+            return None
+
+        # 计算默认止损价
+        if is_long:
+            default_sl = entry_price * (1 - self.DEFAULT_SL_PCT)
+        else:
+            default_sl = entry_price * (1 + self.DEFAULT_SL_PCT)
+
+        if sl_price is None:
+            logger.debug(f"No sl_price provided, using default: {default_sl:.6f}")
+            return default_sl
+
+        # 验证方向正确性
+        if is_long and sl_price >= entry_price:
+            logger.warning(
+                f"Invalid sl_price for long: {sl_price} >= entry {entry_price}, using default"
+            )
+            return default_sl
+        if not is_long and sl_price <= entry_price:
+            logger.warning(
+                f"Invalid sl_price for short: {sl_price} <= entry {entry_price}, using default"
+            )
+            return default_sl
+
+        # 验证止损幅度在合理范围内
+        sl_pct = abs(sl_price - entry_price) / entry_price
+        if sl_pct < self.MIN_SL_PCT:
+            logger.warning(
+                f"sl_price too tight ({sl_pct:.2%} < {self.MIN_SL_PCT:.2%}), using default"
+            )
+            return default_sl
+        if sl_pct > self.MAX_SL_PCT:
+            logger.warning(
+                f"sl_price too wide ({sl_pct:.2%} > {self.MAX_SL_PCT:.2%}), clamping"
+            )
+            if is_long:
+                return entry_price * (1 - self.MAX_SL_PCT)
+            else:
+                return entry_price * (1 + self.MAX_SL_PCT)
+
+        return sl_price
+
+    def _validate_tp_price(
+        self,
+        tp_price: Optional[float],
+        entry_price: float,
+        sl_price: Optional[float],
+        is_long: bool,
+    ) -> Optional[float]:
+        """Validate take profit price.
+
+        Args:
+            tp_price: LLM-provided take profit price (may be None)
+            entry_price: Expected entry price
+            sl_price: Validated stop loss price
+            is_long: True for long position, False for short
+
+        Returns:
+            Validated tp_price, or None if invalid/not provided
+        """
+        if tp_price is None or entry_price <= 0:
+            return None
+
+        # 验证方向正确性
+        if is_long and tp_price <= entry_price:
+            logger.warning(
+                f"Invalid tp_price for long: {tp_price} <= entry {entry_price}, ignoring"
+            )
+            return None
+        if not is_long and tp_price >= entry_price:
+            logger.warning(
+                f"Invalid tp_price for short: {tp_price} >= entry {entry_price}, ignoring"
+            )
+            return None
+
+        # 可选：验证盈亏比至少 1:1
+        if sl_price:
+            risk = abs(entry_price - sl_price)
+            reward = abs(tp_price - entry_price)
+            if reward < risk:
+                logger.debug(
+                    f"tp/sl ratio {reward/risk:.2f} < 1, consider adjusting"
+                )
+
+        return tp_price
 
     def _normalize_plan(
         self,
@@ -460,6 +566,7 @@ class LlmComposer(BaseComposer):
         - Quantity step/min/max constraints
         - Buying power limits
         - Notional caps
+        - Stop loss / take profit validation
         """
         instructions: List[TradeInstruction] = []
         pv = context.portfolio
@@ -476,6 +583,20 @@ class LlmComposer(BaseComposer):
             symbol = item.instrument.symbol
             qty = float(item.target_qty)
             leverage = float(item.leverage or 1.0)
+
+            # For close operations with zero/small qty, use current position quantity
+            if item.action in (TradeDecisionAction.CLOSE_LONG, TradeDecisionAction.CLOSE_SHORT):
+                current_pos = pv.positions.get(symbol)
+                if current_pos and abs(current_pos.quantity) > 0:
+                    pos_qty = abs(current_pos.quantity)
+                    if qty <= 0 or qty < pos_qty * 0.01:  # qty is 0 or negligible
+                        logger.info(
+                            f"{symbol}: 平仓操作 qty={qty} 太小，使用当前持仓量 {pos_qty}"
+                        )
+                        qty = pos_qty
+                else:
+                    logger.warning(f"{symbol}: 平仓操作但无持仓，跳过")
+                    continue
 
             # Apply quantity constraints
             if constraints:
@@ -497,8 +618,18 @@ class LlmComposer(BaseComposer):
             for feat in context.features:
                 if feat.instrument.symbol == symbol:
                     values = feat.values or {}
-                    price = values.get("price.last") or values.get("price.close")
-                    break
+                    # 尝试多种价格字段
+                    price = (
+                        values.get("price.last")
+                        or values.get("price.close")
+                        or values.get("close")
+                        or values.get("last")
+                    )
+                    if price:
+                        break
+
+            if not price:
+                logger.warning(f"{symbol}: 无法从 features 获取价格，止损将无法设置")
 
             if price:
                 notional = qty * float(price)
@@ -531,10 +662,90 @@ class LlmComposer(BaseComposer):
                 logger.warning(f"Skipping {symbol}: qty too small after adjustments")
                 continue
 
+            # Re-check min_trade_qty after all adjustments (quantity_step, cap, etc.)
+            if constraints and constraints.min_trade_qty and qty < constraints.min_trade_qty:
+                logger.warning(
+                    f"Skipping {symbol}: adjusted qty {qty} < min_trade_qty {constraints.min_trade_qty}"
+                )
+                continue
+
+            # Check minimum notional value (most exchanges require ~$5-10 min notional)
+            if price:
+                notional = qty * float(price)
+                min_notional = (
+                    constraints.min_notional if constraints and constraints.min_notional else 5.0
+                )
+                if notional < min_notional:
+                    # Try to bump up to minimum notional
+                    min_qty_for_notional = min_notional / float(price) * 1.05  # 5% buffer
+                    # Re-apply quantity step if needed
+                    if constraints and constraints.quantity_step:
+                        min_qty_for_notional = (
+                            round(min_qty_for_notional / constraints.quantity_step + 0.5)
+                            * constraints.quantity_step
+                        )
+
+                    # Only check buying power for opening positions
+                    is_opening = item.action in (
+                        TradeDecisionAction.OPEN_LONG, TradeDecisionAction.OPEN_SHORT
+                    )
+                    if is_opening:
+                        # Check if we can afford the bumped quantity
+                        # Note: available_bp was already reduced above for this position
+                        original_margin = (qty * float(price)) / leverage
+                        bumped_margin = (min_qty_for_notional * float(price)) / leverage
+                        # Add back what we already deducted for this position
+                        effective_available = available_bp + original_margin
+                        if bumped_margin <= effective_available * 0.95:  # Leave some buffer
+                            logger.info(
+                                f"{symbol}: bumping qty from {qty} to {min_qty_for_notional} "
+                                f"to meet min_notional {min_notional}"
+                            )
+                            qty = min_qty_for_notional
+                            # Adjust available_bp: add back original deduction, deduct new amount
+                            available_bp = effective_available - bumped_margin
+                        else:
+                            logger.warning(
+                                f"Skipping {symbol}: notional {notional:.2f} < min_notional {min_notional}, "
+                                f"insufficient buying power to bump up"
+                            )
+                            continue
+                    else:
+                        # For closing positions, just bump up the qty (no margin needed)
+                        logger.info(
+                            f"{symbol}: bumping close qty from {qty} to {min_qty_for_notional} "
+                            f"to meet min_notional {min_notional}"
+                        )
+                        qty = min_qty_for_notional
+
             # Derive side from action
             side = derive_side_from_action(item.action)
             if side is None:
                 continue
+
+            # Process stop loss / take profit for opening positions
+            sl_price = None
+            tp_price = None
+            if item.action in (TradeDecisionAction.OPEN_LONG, TradeDecisionAction.OPEN_SHORT):
+                is_long = item.action == TradeDecisionAction.OPEN_LONG
+                entry_price = float(price) if price else 0.0
+
+                # Validate and get sl_price (always set for opens)
+                sl_price = self._validate_sl_price(
+                    item.sl_price, entry_price, is_long
+                )
+
+                # Validate tp_price (optional)
+                tp_price = self._validate_tp_price(
+                    item.tp_price, entry_price, sl_price, is_long
+                )
+
+                if sl_price:
+                    tp_str = f"{tp_price:.2f}" if tp_price else "N/A"
+                    logger.info(
+                        f"{symbol} {'LONG' if is_long else 'SHORT'}: "
+                        f"entry≈{entry_price:.2f}, sl={sl_price:.2f}, tp={tp_str}"
+                    )
 
             # Create instruction
             inst = TradeInstruction(
@@ -547,6 +758,8 @@ class LlmComposer(BaseComposer):
                 leverage=leverage,
                 price_mode=PriceMode.MARKET,
                 max_slippage_bps=self._default_slippage_bps,
+                sl_price=sl_price,
+                tp_price=tp_price,
                 meta={
                     "confidence": item.confidence,
                     "rationale": item.rationale,

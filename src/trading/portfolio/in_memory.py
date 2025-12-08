@@ -1,14 +1,10 @@
 """In-memory portfolio service implementation."""
 
 from typing import Dict, List, Optional
-import time
-
-from loguru import logger
 
 from ..models import (
     Constraints,
     FeatureVector,
-    InstrumentRef,
     MarketType,
     PortfolioView,
     PositionSnapshot,
@@ -282,6 +278,81 @@ class InMemoryPortfolioService(BasePortfolioService):
     def set_balance(self, balance: float) -> None:
         """Set account balance (for live mode sync)."""
         self._cash_balance = balance
+
+    def sync_positions(self, exchange_positions: List[Dict]) -> None:
+        """Sync positions from exchange data.
+
+        Args:
+            exchange_positions: List of position dicts from exchange (CCXT format)
+        """
+        from loguru import logger
+
+        # Clear existing positions and rebuild from exchange data
+        synced_symbols = set()
+
+        for pos in exchange_positions:
+            # Extract symbol
+            symbol = pos.get("symbol")
+            if not symbol:
+                continue
+
+            # Extract quantity (CCXT uses 'contracts' for futures, 'info' may have raw data)
+            contracts = pos.get("contracts") or pos.get("contractSize") or 0
+            side = pos.get("side", "").lower()
+
+            # Some exchanges use positive/negative for long/short
+            if side == "short" and contracts > 0:
+                contracts = -contracts
+            elif side == "long" and contracts < 0:
+                contracts = abs(contracts)
+
+            # Skip zero positions
+            if abs(contracts) < 1e-12:
+                continue
+
+            synced_symbols.add(symbol)
+
+            # Extract other fields
+            entry_price = pos.get("entryPrice") or pos.get("avgPrice") or 0.0
+            mark_price = pos.get("markPrice") or pos.get("lastPrice") or entry_price
+            unrealized_pnl = pos.get("unrealizedPnl") or pos.get("unrealizedProfit") or 0.0
+            notional = pos.get("notional") or (abs(contracts) * mark_price if mark_price else 0.0)
+            leverage = pos.get("leverage") or 1.0
+            timestamp = pos.get("timestamp") or get_current_timestamp_ms()
+
+            # Determine trade type
+            trade_type = TradeType.LONG if contracts > 0 else TradeType.SHORT
+
+            # Create InstrumentRef
+            from ..models import InstrumentRef
+            instrument = InstrumentRef(symbol=symbol)
+
+            # Update position
+            self._positions[symbol] = PositionSnapshot(
+                instrument=instrument,
+                quantity=contracts,
+                avg_price=entry_price if entry_price > 0 else None,
+                mark_price=mark_price if mark_price > 0 else None,
+                unrealized_pnl=unrealized_pnl,
+                notional=notional,
+                leverage=leverage,
+                entry_ts=timestamp,
+                trade_type=trade_type,
+            )
+
+            logger.debug(
+                f"同步持仓 {symbol}: qty={contracts}, entry={entry_price}, "
+                f"pnl={unrealized_pnl:.2f}"
+            )
+
+        # Remove positions that are no longer on exchange
+        symbols_to_remove = [s for s in self._positions if s not in synced_symbols]
+        for symbol in symbols_to_remove:
+            logger.debug(f"移除已平仓位: {symbol}")
+            del self._positions[symbol]
+
+        if synced_symbols:
+            logger.info(f"已同步 {len(synced_symbols)} 个持仓: {synced_symbols}")
 
     def reset(self) -> None:
         """Reset portfolio to initial state."""

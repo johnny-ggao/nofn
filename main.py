@@ -17,6 +17,7 @@ from src.trading import (
     LLMModelConfig,
     MarginMode,
     MarketType,
+    SummaryLLMConfig,
     TradingConfig,
     TradingMode,
     UserRequest,
@@ -80,6 +81,21 @@ def create_user_request(args) -> UserRequest:
     """Create user request from settings and command line args."""
     settings = get_settings()
 
+    # Build summary LLM config if configured
+    summary_llm_config = None
+    if settings.llm.summary and settings.llm.summary.enabled:
+        summary_llm_config = SummaryLLMConfig(
+            enabled=True,
+            provider=settings.llm.summary.provider,
+            model_id=settings.llm.summary.model,
+            api_key=settings.secrets.get_llm_api_key(settings.llm.summary.provider),
+            base_url=settings.llm.summary.base_url,
+            temperature=settings.llm.summary.temperature,
+        )
+        logger.info(
+            f"Summary LLM 已配置: {settings.llm.summary.provider}/{settings.llm.summary.model}"
+        )
+
     # Build LLM config from YAML + secrets
     llm_config = LLMModelConfig(
         provider=settings.llm.provider,
@@ -87,6 +103,7 @@ def create_user_request(args) -> UserRequest:
         api_key=settings.get_llm_api_key(),
         base_url=settings.llm.base_url,
         temperature=settings.llm.temperature,
+        summary_llm=summary_llm_config,
     )
 
     # Build exchange config from YAML + secrets
@@ -115,6 +132,9 @@ def create_user_request(args) -> UserRequest:
         MarginMode.CROSS,
     )
 
+    # Get settle_coin from config (default to USDT)
+    settle_coin = getattr(settings.exchange, "settle_coin", "USDT")
+
     exchange_config = ExchangeConfig(
         exchange_id=settings.exchange.id,
         trading_mode=trading_mode,
@@ -124,6 +144,7 @@ def create_user_request(args) -> UserRequest:
         testnet=settings.exchange.testnet,
         market_type=market_type,
         margin_mode=margin_mode,
+        settle_coin=settle_coin,
     )
 
     # Command line args override config file

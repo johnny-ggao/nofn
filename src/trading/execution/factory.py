@@ -18,10 +18,11 @@ async def create_execution_gateway(config: ExchangeConfig) -> BaseExecutionGatew
         Execution gateway (paper or live)
     """
     if config.trading_mode == TradingMode.VIRTUAL:
-        logger.info("Creating PaperExecutionGateway for virtual trading")
+        logger.info(f"Creating PaperExecutionGateway for virtual trading (settle_coin={config.settle_coin})")
         return PaperExecutionGateway(
             initial_balance=10000.0,  # Will be overridden by runtime
             fee_bps=config.fee_bps,
+            settle_coin=config.settle_coin,
         )
 
     # Live trading - create CCXT gateway
