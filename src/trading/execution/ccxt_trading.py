@@ -16,7 +16,7 @@ import hashlib
 from typing import Dict, List, Optional
 
 import ccxt.async_support as ccxt
-from loguru import logger
+from termcolor import cprint
 
 from ..models import (
     FeatureVector,
@@ -179,29 +179,29 @@ class CCXTExecutionGateway(BaseExecutionGateway):
 
                 if current_hedged == target_hedged:
                     mode_name = "hedge" if current_hedged else "one-way"
-                    logger.debug(f"Position mode already set to {mode_name}, skipping")
+                    cprint(f"Position mode already set to {mode_name}, skipping", "magenta")
                     return
 
                 # 需要切换模式
-                logger.info(
+                cprint(
                     f"Switching position mode: {'one-way' if current_hedged else 'hedge'} -> "
                     f"{'hedge' if target_hedged else 'one-way'}"
-                )
+                , "cyan")
         except Exception as e:
-            logger.debug(f"Could not fetch current position mode: {e}")
+            cprint(f"Could not fetch current position mode: {e}", "magenta")
 
         # 设置持仓模式
         try:
             await self._exchange.set_position_mode(target_hedged)
             mode_name = "hedge" if target_hedged else "one-way"
-            logger.info(f"Position mode set to {mode_name}")
+            cprint(f"Position mode set to {mode_name}", "white")
         except Exception as e:
             err_str = str(e)
             # Binance -4059: 已经是目标模式
             if "-4059" in err_str or "No need to change" in err_str:
-                logger.debug(f"Position mode already correct: {e}")
+                cprint(f"Position mode already correct: {e}", "white")
             else:
-                logger.warning(f"Could not set position mode: {e}")
+                cprint(f"Could not set position mode: {e}", "yellow")
 
     def _normalize_symbol(self, symbol: str, market_type: Optional[str] = None) -> str:
         """Normalize symbol format for CCXT.
@@ -242,7 +242,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             await exchange.set_leverage(int(leverage), symbol, params)
             self._leverage_cache[symbol] = leverage
         except Exception as e:
-            logger.warning(f"Could not set leverage for {symbol}: {e}")
+            cprint(f"Could not set leverage for {symbol}: {e}", "yellow")
 
     async def _setup_margin_mode(self, symbol: str, exchange: ccxt.Exchange) -> None:
         """Set margin mode for a symbol if needed and supported."""
@@ -256,7 +256,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             await exchange.set_margin_mode(self.margin_mode, symbol)
             self._margin_mode_cache[symbol] = self.margin_mode
         except Exception as e:
-            logger.warning(f"Could not set margin mode for {symbol}: {e}")
+            cprint(f"Could not set margin mode for {symbol}: {e}", "yellow")
 
     def _sanitize_client_order_id(self, raw_id: str) -> str:
         """Sanitize client order id to satisfy exchange constraints."""
@@ -465,7 +465,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                     fee_cost = float(fee_str)
 
         except Exception as e:
-            logger.warning(f"Error extracting fee for {symbol}: {e}")
+            cprint(f"Error extracting fee for {symbol}: {e}", "yellow")
 
         return fee_cost
 
@@ -477,7 +477,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             try:
                 amount = float(exchange.amount_to_precision(symbol, amount))
             except Exception as e:
-                logger.warning(f"Amount {amount} failed precision check for {symbol}: {e}")
+                cprint(f"Amount {amount} failed precision check for {symbol}: {e}", "yellow")
                 amount = 0.0
 
             if price is not None:
@@ -493,7 +493,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             return amount, price
 
         except Exception as e:
-            logger.warning(f"Precision application failed for {symbol}: {e}")
+            cprint(f"Precision application failed for {symbol}: {e}", "yellow")
             return amount, price
 
     async def execute(
@@ -503,10 +503,10 @@ class CCXTExecutionGateway(BaseExecutionGateway):
     ) -> List[TxResult]:
         """Execute trade instructions on the real exchange via CCXT."""
         if not instructions:
-            logger.info("没有需要执行的指令")
+            cprint("没有需要执行的指令", "white")
             return []
 
-        logger.info(f"{len(instructions)} 条指令正在被执行...")
+        cprint(f"{len(instructions)} 条指令正在被执行...", "white")
         exchange = await self._get_exchange()
         results: List[TxResult] = []
 
@@ -516,7 +516,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                 or derive_side_from_action(getattr(inst, "action", None))
                 or TradeSide.BUY
             )
-            logger.info(f"处理 {inst.instrument.symbol} {side.value} qty={inst.quantity}")
+            cprint(f"处理 {inst.instrument.symbol} {side.value} qty={inst.quantity}", "white")
             try:
                 result = await self._execute_single(inst, exchange)
                 results.append(result)
@@ -666,10 +666,10 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         try:
             reject_reason = await self._check_minimums(exchange, symbol, amount, price)
         except Exception as e:
-            logger.warning(f"Minimum check failed for {symbol}: {e}")
+            cprint(f"Minimum check failed for {symbol}: {e}", "yellow")
             reject_reason = f"minimum_check_failed:{e}"
         if reject_reason is not None:
-            logger.warning(f"Skipping order due to {reject_reason}")
+            cprint(f"Skipping order due to {reject_reason}", "yellow")
             return TxResult(
                 instruction_id=inst.instruction_id,
                 instrument=inst.instrument,
@@ -717,13 +717,13 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                     )
                     params["timeInForce"] = "Ioc"
             except Exception as e:
-                logger.warning(f"Could not setup Hyperliquid market order: {e}")
+                cprint(f"Could not setup Hyperliquid market order: {e}", "yellow")
 
         # Create order
         try:
-            logger.info(
+            cprint(
                 f"Creating {order_type} order: {side} {amount} {symbol} @ {price if price else 'market'}"
-            )
+            , "cyan")
             order = await exchange.create_order(
                 symbol=symbol,
                 type=order_type,
@@ -732,12 +732,12 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                 price=price,
                 params=params,
             )
-            logger.info(
-                f"Order created: id={order.get('id')}, status={order.get('status')}, filled={order.get('filled')}"
+            cprint(
+                f"Order created: id={order.get('id', "cyan")}, status={order.get('status')}, filled={order.get('filled')}"
             )
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"ERROR creating order for {symbol}: {error_msg}")
+            cprint(f"ERROR creating order for {symbol}: {error_msg}", "red")
             return TxResult(
                 instruction_id=inst.instruction_id,
                 instrument=inst.instrument,
@@ -757,7 +757,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                     await asyncio.sleep(0.5)
                     order = await exchange.fetch_order(order_id, symbol)
                 except Exception as e:
-                    logger.warning(f"Could not fetch order status for {symbol}: {e}")
+                    cprint(f"Could not fetch order status for {symbol}: {e}", "yellow")
 
         # Parse order response
         filled_qty = float(order.get("filled", 0.0))
@@ -821,7 +821,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         try:
             # Check if exchange supports stop orders
             if not exchange.has.get("createOrder"):
-                logger.warning(f"{self.exchange_id} does not support createOrder")
+                cprint(f"{self.exchange_id} does not support createOrder", "yellow")
                 return None
 
             # Apply precision to stop price
@@ -872,9 +872,9 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                 params["stopPrice"] = stop_price
                 params["reduceOnly"] = True
 
-            logger.info(
+            cprint(
                 f"Placing stop loss: {side} {quantity} {symbol} @ trigger {stop_price}"
-            )
+            , "cyan")
 
             # For Binance, use create_order with type=STOP_MARKET
             if self.exchange_id == "binance":
@@ -917,13 +917,13 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                         params=params,
                     )
 
-            logger.info(
-                f"Stop loss order placed: id={order.get('id')}, status={order.get('status')}"
+            cprint(
+                f"Stop loss order placed: id={order.get('id', "cyan")}, status={order.get('status')}"
             )
             return order
 
         except Exception as e:
-            logger.error(f"Failed to place stop loss for {symbol}: {e}")
+            cprint(f"Failed to place stop loss for {symbol}: {e}", "red")
             return None
 
     async def _place_take_profit_order(
@@ -978,9 +978,9 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                 params["stopPrice"] = tp_price
                 params["reduceOnly"] = True
 
-            logger.info(
+            cprint(
                 f"Placing take profit: {side} {quantity} {symbol} @ trigger {tp_price}"
-            )
+            , "cyan")
 
             if self.exchange_id == "binance":
                 order = await exchange.create_order(
@@ -1010,13 +1010,13 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                     params=params,
                 )
 
-            logger.info(
-                f"Take profit order placed: id={order.get('id')}, status={order.get('status')}"
+            cprint(
+                f"Take profit order placed: id={order.get('id', "cyan")}, status={order.get('status')}"
             )
             return order
 
         except Exception as e:
-            logger.error(f"Failed to place take profit for {symbol}: {e}")
+            cprint(f"Failed to place take profit for {symbol}: {e}", "red")
             return None
 
     async def _exec_open_long(
@@ -1034,9 +1034,9 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         if result.status == TxStatus.FILLED and result.filled_qty > 0:
             symbol = self._normalize_symbol(inst.instrument.symbol)
 
-            logger.info(
+            cprint(
                 f"开多仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
-            )
+            , "cyan")
 
             # Place stop loss (sell to close long)
             if inst.sl_price:
@@ -1075,9 +1075,9 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         if result.status == TxStatus.FILLED and result.filled_qty > 0:
             symbol = self._normalize_symbol(inst.instrument.symbol)
 
-            logger.info(
+            cprint(
                 f"开空仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
-            )
+            , "cyan")
 
             # Place stop loss (buy to close short)
             if inst.sl_price:
@@ -1119,10 +1119,10 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             open_orders = await exchange.fetch_open_orders(symbol)
 
             if not open_orders:
-                logger.debug(f"No open orders to cancel for {symbol}")
+                cprint(f"No open orders to cancel for {symbol}", "magenta")
                 return 0
 
-            logger.info(f"Found {len(open_orders)} open orders for {symbol}, cancelling...")
+            cprint(f"Found {len(open_orders)} open orders for {symbol}, cancelling...")
 
             for order in open_orders:
                 order_id = order.get("id")
@@ -1131,14 +1131,14 @@ class CCXTExecutionGateway(BaseExecutionGateway):
                 try:
                     await exchange.cancel_order(order_id, symbol)
                     cancelled_count += 1
-                    logger.info(
+                    cprint(
                         f"Cancelled order {order_id}: {order_type} {order_side}"
-                    )
+                    , "cyan")
                 except Exception as e:
-                    logger.warning(f"Failed to cancel order {order_id}: {e}")
+                    cprint(f"Failed to cancel order {order_id}: {e}", "yellow")
 
         except Exception as e:
-            logger.warning(f"Failed to fetch/cancel open orders for {symbol}: {e}")
+            cprint(f"Failed to fetch/cancel open orders for {symbol}: {e}", "yellow")
 
         return cancelled_count
 
@@ -1215,7 +1215,7 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             positions = await exchange.fetch_positions(normalized_symbols)
             return positions
         except Exception as e:
-            logger.warning(f"Could not fetch positions: {e}")
+            cprint(f"Could not fetch positions: {e}", "yellow")
             return []
 
     async def cancel_order(self, order_id: str, symbol: str) -> Dict:

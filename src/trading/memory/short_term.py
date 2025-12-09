@@ -4,7 +4,7 @@
 支持序列化/反序列化以实现持久化。
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 from collections import deque
 

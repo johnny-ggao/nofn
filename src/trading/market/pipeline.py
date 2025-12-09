@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from typing import List, Optional
 
-from loguru import logger
+from termcolor import cprint
 
 from ..models import (
     CandleConfig,
@@ -63,8 +63,8 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         # Binance 合约支持: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
         # 注: 1s 仅现货支持，合约不支持
         self._candle_configurations = candle_configurations or [
-            CandleConfig(interval="1m", lookback=60),      # 1 hour of 1m candles
-            CandleConfig(interval="15m", lookback=16),     # 4 hours of 15m candles
+            CandleConfig(interval="1m", lookback=60 * 3),      # 1 hour of 1m candles
+            CandleConfig(interval="15m", lookback=60 * 4),     # 4 hours of 15m candles
         ]
 
     @classmethod
@@ -109,9 +109,10 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
                 snapshot=market_snapshot
             )
 
-        logger.info(
+        cprint(
             f"Starting concurrent data fetching for {len(self._candle_configurations)} "
-            f"candle sets and market snapshot..."
+            f"candle sets and market snapshot...",
+            "white"
         )
 
         # Build concurrent tasks
@@ -123,7 +124,7 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
 
         # Execute concurrently
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        logger.info("Concurrent data fetching complete.")
+        cprint("Concurrent data fetching complete.", "white")
 
         # Process results, handling any exceptions
         all_features: List[FeatureVector] = []
@@ -132,11 +133,12 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
             if isinstance(result, Exception):
                 if i < len(self._candle_configurations):
                     config = self._candle_configurations[i]
-                    logger.warning(
-                        f"Failed to fetch candles for {config.interval}: {result}"
+                    cprint(
+                        f"Failed to fetch candles for {config.interval}: {result}",
+                        "yellow"
                     )
                 else:
-                    logger.warning(f"Failed to fetch market snapshot: {result}")
+                    cprint(f"Failed to fetch market snapshot: {result}", "yellow")
                 continue
 
             if isinstance(result, list):

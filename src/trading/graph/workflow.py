@@ -41,7 +41,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.store.base import BaseStore
-from loguru import logger
+from termcolor import cprint
 
 from .state import (
     TradingState,
@@ -147,7 +147,7 @@ class TradingGraphNodes:
         # 如果处于冷静期，递减并返回
         if cooldown_remaining > 0:
             new_cooldown = cooldown_remaining - 1
-            logger.debug(f"冷静期中：剩余 {new_cooldown} 个周期")
+            cprint(f"冷静期中：剩余 {new_cooldown} 个周期", "magenta")
             return {
                 "cooldown_remaining": new_cooldown,
             }
@@ -155,15 +155,15 @@ class TradingGraphNodes:
         # 判断是否需要触发反思（每隔 N 个周期）
         cycles_since_last = cycle_index - last_reflection_cycle
         if cycles_since_last < self._reflection_interval:
-            logger.debug(
+            cprint(
                 f"跳过反思：距上次反思仅 {cycles_since_last} 个周期，"
                 f"间隔要求 {self._reflection_interval}"
-            )
+            , "magenta")
             return {}
 
         # 无反思回调时跳过
         if self._reflect_callback is None:
-            logger.debug("跳过反思：未配置 reflect_callback")
+            cprint("跳过反思：未配置 reflect_callback", "magenta")
             return {}
 
         # 执行反思
@@ -174,16 +174,17 @@ class TradingGraphNodes:
             insight = await self._reflect_callback(digest, history_records)
 
             if not insight:
-                logger.debug("反思回调返回空结果")
+                cprint("反思回调返回空结果", "magenta")
                 return {"last_reflection_cycle": cycle_index}
 
             # 提取冷静期建议
             new_cooldown = insight.get("cooldown_cycles", 0)
 
-            logger.info(
+            cprint(
                 f"反思完成：周期 {cycle_index}, "
                 f"警报数={len(insight.get('alerts', []))}, "
-                f"冷静期={new_cooldown}"
+                f"冷静期={new_cooldown}",
+                "cyan"
             )
 
             return {
@@ -193,7 +194,7 @@ class TradingGraphNodes:
             }
 
         except Exception as e:
-            logger.warning(f"反思失败: {e}")
+            cprint(f"反思失败: {e}", "yellow")
             return {}
 
     async def cooldown_noop(self, state: TradingState) -> Dict[str, Any]:
@@ -214,7 +215,7 @@ class TradingGraphNodes:
             f"{summary[:100] if summary else '反思建议暂停交易。'}"
         )
 
-        logger.info(f"冷静期 NOOP: {rationale}")
+        cprint(f"冷静期 NOOP: {rationale}", "white")
 
         return {
             "instructions": [],
@@ -247,11 +248,11 @@ class TradingGraphNodes:
                 )
                 if long_term_memories:
                     context["long_term_memories"] = long_term_memories
-                    logger.debug(
+                    cprint(
                         f"注入 {len(long_term_memories)} 条长期记忆到决策上下文"
                     )
             except Exception as e:
-                logger.warning(f"检索长期记忆失败: {e}")
+                cprint(f"检索长期记忆失败: {e}", "yellow")
 
         # 调用决策回调
         result = await self._decide_callback(context)
@@ -280,7 +281,7 @@ class TradingGraphNodes:
                     memory["memory_id"] = item.key
                     memories.append(memory)
             except Exception as e:
-                logger.debug(f"搜索 {memory_type.value} 记忆失败: {e}")
+                cprint(f"搜索 {memory_type.value} 记忆失败: {e}", "magenta")
 
         # 按重要性排序
         memories.sort(key=lambda m: m.get("importance", 0), reverse=True)
@@ -351,7 +352,7 @@ class TradingGraphNodes:
         to_summarize, _ = prepare_memories_for_summary(memories)
 
         if not to_summarize:
-            logger.debug("无需摘要：没有足够的历史记忆")
+            cprint("无需摘要：没有足够的历史记忆", "magenta")
             return {}
 
         # 生成摘要内容
@@ -361,7 +362,7 @@ class TradingGraphNodes:
             try:
                 summary_content = await self._summarize_callback(memories_text)
             except Exception as e:
-                logger.warning(f"摘要回调失败，使用默认摘要: {e}")
+                cprint(f"摘要回调失败，使用默认摘要: {e}", "yellow")
                 summary_content = self._generate_simple_summary(to_summarize)
         else:
             summary_content = self._generate_simple_summary(to_summarize)
@@ -369,10 +370,10 @@ class TradingGraphNodes:
         # 创建摘要对象
         summary = create_summary_from_memories(to_summarize, summary_content)
 
-        logger.info(
+        cprint(
             f"生成决策摘要: 周期{summary['cycle_range'][0]}-{summary['cycle_range'][1]}, "
             f"{summary['total_decisions']}次决策"
-        )
+        , "cyan")
 
         # 归档最旧的摘要到长期记忆（当 summaries 即将满时）
         # 新摘要加入后如果会超过 MAX_SUMMARIES，需要先归档最旧的
@@ -383,7 +384,7 @@ class TradingGraphNodes:
                     store, state["strategy_id"], oldest_summary
                 )
             except Exception as e:
-                logger.warning(f"归档摘要到长期记忆失败: {e}")
+                cprint(f"归档摘要到长期记忆失败: {e}", "yellow")
 
         return {"summaries": [summary]}
 
@@ -429,10 +430,10 @@ class TradingGraphNodes:
 
         await store.aput(namespace, memory_id, value)
 
-        logger.info(
+        cprint(
             f"归档摘要为长期记忆: {memory_id}, "
             f"cycles={cycle_range}, pnl={total_pnl:.4f}"
-        )
+        , "cyan")
 
         return memory_id
 
@@ -447,7 +448,7 @@ class TradingGraphNodes:
 
         actions = {}
         for m in memories:
-            action = m.get("action", "unknown")
+            action = m.get("action")
             actions[action] = actions.get(action, 0) + 1
 
         action_desc = ", ".join(f"{k}={v}次" for k, v in actions.items())
@@ -469,7 +470,7 @@ def _should_cooldown(state: TradingState) -> Literal["cooldown", "decide"]:
     """
     cooldown_remaining = state.get("cooldown_remaining", 0)
     if cooldown_remaining > 0:
-        logger.debug(f"冷静期中：剩余 {cooldown_remaining} 个周期，跳过决策")
+        cprint(f"冷静期中：剩余 {cooldown_remaining} 个周期，跳过决策", "magenta")
         return "cooldown"
     return "decide"
 
@@ -481,7 +482,7 @@ def _should_summarize(state: TradingState) -> Literal["summarize", "end"]:
     """
     memories = state.get("memories", [])
     if should_generate_summary(memories):
-        logger.debug(f"触发摘要：memories 数量={len(memories)}")
+        cprint(f"触发摘要：memories 数量={len(memories)}")
         return "summarize"
     return "end"
 
@@ -616,7 +617,7 @@ def get_sqlite_checkpointer_context(
     # 确保目录存在
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"LangGraph Checkpointer 路径: {db_path}")
+    cprint(f"LangGraph Checkpointer 路径: {db_path}", "white")
     return AsyncSqliteSaver.from_conn_string(db_path)
 
 

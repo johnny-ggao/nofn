@@ -8,7 +8,7 @@
 
 from typing import List, Optional
 
-from loguru import logger
+from termcolor import cprint
 
 from ..decision.interfaces import BaseComposer
 from ..decision.llm_composer import LlmComposer
@@ -88,8 +88,9 @@ class ReflectiveComposer(BaseComposer):
         # 步骤1: 检查冷静期
         if self._enable_cooldown and self._cooldown_remaining > 0:
             self._cooldown_remaining -= 1
-            logger.info(
-                f"反思建议冷静期中，剩余 {self._cooldown_remaining + 1} 个周期，选择 noop"
+            cprint(
+                f"反思建议冷静期中，剩余 {self._cooldown_remaining + 1} 个周期，选择 noop",
+                "cyan"
             )
             return ComposeResult(
                 instructions=[],
@@ -103,8 +104,9 @@ class ReflectiveComposer(BaseComposer):
         # 检查是否需要进入冷静期
         if self._enable_cooldown and insight.cooldown_cycles > 0:
             self._cooldown_remaining = insight.cooldown_cycles - 1
-            logger.warning(
-                f"反思触发冷静期: {insight.cooldown_cycles} 个周期。原因: {insight.summary}"
+            cprint(
+                f"反思触发冷静期: {insight.cooldown_cycles} 个周期。原因: {insight.summary}",
+                "yellow"
             )
             return ComposeResult(
                 instructions=[],
@@ -154,11 +156,11 @@ class ReflectiveComposer(BaseComposer):
         # 记录反思结果
         if insight.alerts:
             for alert in insight.alerts:
-                log_fn = logger.warning if alert.severity == "critical" else logger.info
+                log_fn = lambda msg: cprint(msg, "yellow") if alert.severity == "critical" else cprint(msg, "white")
                 log_fn(f"反思警报 [{alert.severity}]: {alert.message}")
 
         if insight.lessons:
-            logger.info(f"反思教训: {[l.lesson for l in insight.lessons[:2]]}")
+            cprint(f"反思教训: {[l.lesson for l in insight.lessons[:2]]}", "white")
 
         return insight
 
@@ -213,8 +215,9 @@ class ReflectiveComposer(BaseComposer):
 
             # 过滤器1: 标的黑名单
             if self._enable_symbol_filter and symbol in insight.symbols_to_avoid:
-                logger.info(
-                    f"反思过滤: {symbol} 在回避列表中，跳过 {inst.action.value}"
+                cprint(
+                    f"反思过滤: {symbol} 在回避列表中，跳过 {inst.action.value}",
+                    "cyan"
                 )
                 continue
 
@@ -223,9 +226,10 @@ class ReflectiveComposer(BaseComposer):
                 meta = inst.meta or {}
                 confidence = meta.get("confidence", 1.0)
                 if confidence < insight.suggested_min_confidence:
-                    logger.info(
+                    cprint(
                         f"反思过滤: {symbol} 置信度 {confidence:.2f} "
-                        f"低于建议阈值 {insight.suggested_min_confidence:.2f}"
+                        f"低于建议阈值 {insight.suggested_min_confidence:.2f}",
+                        "cyan"
                     )
                     continue
 
@@ -246,4 +250,4 @@ class ReflectiveComposer(BaseComposer):
     def reset_cooldown(self) -> None:
         """重置冷静期。"""
         self._cooldown_remaining = 0
-        logger.info("反思冷静期已手动重置")
+        cprint("反思冷静期已手动重置", "white")

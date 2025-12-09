@@ -5,7 +5,7 @@ import itertools
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from loguru import logger
+from termcolor import cprint
 
 from ..models import Candle, InstrumentRef
 from ..utils import get_exchange_cls, normalize_symbol
@@ -83,14 +83,10 @@ class SimpleMarketDataSource(BaseMarketDataSource):
                     )
                 return symbol_candles
             except Exception as exc:
-                logger.warning(
-                    "Failed to fetch candles for {} (normalized: {}) from {}, "
-                    "interval is {}, return empty candles. Error: {}",
-                    symbol,
-                    normalized_symbol,
-                    self._exchange_id,
-                    interval,
-                    exc,
+                cprint(
+                    f"Failed to fetch candles for {symbol} (normalized: {normalized_symbol}) from {self._exchange_id}, "
+                    f"interval is {interval}, return empty candles. Error: {exc}",
+                    "yellow"
                 )
                 return []
 
@@ -99,9 +95,10 @@ class SimpleMarketDataSource(BaseMarketDataSource):
 
         candles: List[Candle] = list(itertools.chain.from_iterable(results))
 
-        logger.debug(
-            f"Fetched {len(candles)} candles for symbols: {symbols}, "
-            f"interval: {interval}, lookback: {lookback}"
+        cprint(
+            f"Fetched {len(candles)} candles ({lookback} × {len(symbols)} symbols), "
+            f"interval: {interval}",
+            "white"
         )
         return candles
 
@@ -138,36 +135,25 @@ class SimpleMarketDataSource(BaseMarketDataSource):
                         oi = await exchange.fetch_open_interest(sym)
                         snapshot[symbol]["open_interest"] = oi
                     except Exception:
-                        logger.debug(
-                            "Failed to fetch open interest for {} at {}",
-                            symbol,
-                            self._exchange_id,
-                        )
+                        pass  # Silently ignore
 
                     # Best-effort: fetch funding rate
                     try:
                         fr = await exchange.fetch_funding_rate(sym)
                         snapshot[symbol]["funding_rate"] = fr
                     except Exception:
-                        logger.debug(
-                            "Failed to fetch funding rate for {} at {}",
-                            symbol,
-                            self._exchange_id,
-                        )
-                    logger.debug(f"Fetched market snapshot for {sym}")
-                except Exception:
-                    logger.exception(
-                        "Failed to fetch market snapshot for {} at {}",
-                        symbol,
-                        self._exchange_id,
+                        pass  # Silently ignore
+
+                    cprint(f"Fetched market snapshot for {sym}", "magenta")
+                except Exception as e:
+                    cprint(
+                        f"Failed to fetch market snapshot for {symbol} at {self._exchange_id}: {e}",
+                        "red"
                     )
         finally:
             try:
                 await exchange.close()
-            except Exception:
-                logger.exception(
-                    "Failed to close exchange connection for {}",
-                    self._exchange_id,
-                )
+            except Exception as e:
+                cprint(f"Failed to close exchange connection for {self._exchange_id}: {e}", "red")
 
         return dict(snapshot)

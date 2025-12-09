@@ -285,7 +285,7 @@ class InMemoryPortfolioService(BasePortfolioService):
         Args:
             exchange_positions: List of position dicts from exchange (CCXT format)
         """
-        from loguru import logger
+        from termcolor import cprint
 
         # Clear existing positions and rebuild from exchange data
         synced_symbols = set()
@@ -340,19 +340,20 @@ class InMemoryPortfolioService(BasePortfolioService):
                 trade_type=trade_type,
             )
 
-            logger.debug(
+            cprint(
                 f"同步持仓 {symbol}: qty={contracts}, entry={entry_price}, "
-                f"pnl={unrealized_pnl:.2f}"
+                f"pnl={unrealized_pnl:.2f}",
+                "magenta"
             )
 
         # Remove positions that are no longer on exchange
         symbols_to_remove = [s for s in self._positions if s not in synced_symbols]
         for symbol in symbols_to_remove:
-            logger.debug(f"移除已平仓位: {symbol}")
+            cprint(f"移除已平仓位: {symbol}", "white")
             del self._positions[symbol]
 
         if synced_symbols:
-            logger.info(f"已同步 {len(synced_symbols)} 个持仓: {synced_symbols}")
+            cprint(f"已同步 {len(synced_symbols)} 个持仓: {synced_symbols}", "white")
 
     def reset(self) -> None:
         """Reset portfolio to initial state."""

@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from loguru import logger
+from termcolor import cprint
 
 from ..models import LLMModelConfig, SummaryLLMConfig
 
@@ -134,7 +134,7 @@ def create_summary_callback(
     summary_config = llm_config.get_summary_config()
 
     if not summary_config.enabled:
-        logger.debug("Summary LLM not enabled, using rule-based summarization")
+        cprint("Summary LLM not enabled, using rule-based summarization", "magenta")
         return None
 
     try:
@@ -142,8 +142,9 @@ def create_summary_callback(
         if summary_llm is None:
             return None
 
-        logger.info(
-            f"Summary LLM initialized: {summary_config.provider}/{summary_config.model_id}"
+        cprint(
+            f"Summary LLM initialized: {summary_config.provider}/{summary_config.model_id}",
+            "cyan"
         )
 
         async def summarize_callback(memories_text: str) -> str:
@@ -168,5 +169,5 @@ def create_summary_callback(
         return summarize_callback
 
     except Exception as e:
-        logger.warning(f"Failed to create summary LLM, using rule-based: {e}")
+        cprint(f"Failed to create summary LLM, using rule-based: {e}", "yellow")
         return None

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 import uuid
 
-from loguru import logger
+from termcolor import cprint
 
 from .state import (
     TradingState,
@@ -203,12 +203,13 @@ class GraphDecisionCoordinator:
             if saved_state.values:
                 self._last_cycle_index = saved_state.values.get("cycle_index", 0)
                 memories_count = len(saved_state.values.get("memories", []))
-                logger.info(
+                cprint(
                     f"从 LangGraph checkpoint 恢复状态: "
-                    f"cycle={self._last_cycle_index}, memories={memories_count}"
+                    f"cycle={self._last_cycle_index}, memories={memories_count}",
+                    "cyan"
                 )
         except Exception:
-            logger.debug("没有找到已保存的 checkpoint 状态")
+            cprint("没有找到已保存的 checkpoint 状态", "magenta")
 
     def _create_trades(
         self,
@@ -281,7 +282,7 @@ class GraphDecisionCoordinator:
                     portfolio.buying_power = float(free_cash)
                     portfolio.free_cash = float(free_cash)
         except Exception:
-            logger.warning("无法从交易所同步余额，使用缓存视图")
+            cprint("无法从交易所同步余额，使用缓存视图", "yellow")
 
         # VIRTUAL 模式: 现货只能用可用资金
         if self._request.exchange_config.trading_mode == TradingMode.VIRTUAL:
@@ -509,17 +510,17 @@ class GraphDecisionCoordinator:
                     self._persistence_service.save_holdings_batch(holdings_data)
 
         except Exception:
-            logger.exception("持久化周期数据失败")
+            cprint("持久化周期数据失败", "red"); import traceback; traceback.print_exc()
 
     async def close_all_positions(self) -> List[TradeHistoryEntry]:
         """平掉所有持仓。"""
         try:
-            logger.info(f"正在平掉策略 {self.strategy_id} 的所有持仓")
+            cprint(f"正在平掉策略 {self.strategy_id} 的所有持仓", "white")
 
             portfolio = self.portfolio_service.get_view()
 
             if not portfolio.positions:
-                logger.info("没有持仓需要平掉")
+                cprint("没有持仓需要平掉", "white")
                 return []
 
             instructions = []
@@ -556,7 +557,7 @@ class GraphDecisionCoordinator:
             if not instructions:
                 return []
 
-            logger.info(f"执行 {len(instructions)} 条平仓指令")
+            cprint(f"执行 {len(instructions)} 条平仓指令", "white")
 
             # 获取市场特征用于定价
             market_features: List[FeatureVector] = []
@@ -568,7 +569,7 @@ class GraphDecisionCoordinator:
                         if (f.meta or {}).get("source") == "market_snapshot"
                     ]
                 except Exception:
-                    logger.exception("构建平仓市场特征失败")
+                    cprint("构建平仓市场特征失败", "red"); import traceback; traceback.print_exc()
 
             # 执行
             tx_results = await self._execution_gateway.execute(
@@ -590,11 +591,11 @@ class GraphDecisionCoordinator:
                     )
                 )
 
-            logger.info(f"成功平仓，生成 {len(trades)} 笔交易")
+            cprint(f"成功平仓，生成 {len(trades)} 笔交易", "green")
             return trades
 
         except Exception:
-            logger.exception(f"平仓失败: 策略 {self.strategy_id}")
+            cprint(f"平仓失败: 策略 {self.strategy_id}", "red"); import traceback; traceback.print_exc()
             return []
 
     async def close(self) -> None:

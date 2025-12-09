@@ -9,7 +9,7 @@ import asyncio
 import sys
 
 from dotenv import load_dotenv
-from loguru import logger
+from termcolor import cprint
 
 from src.config import get_settings, load_dotenv as load_env
 from src.trading import (
@@ -23,16 +23,6 @@ from src.trading import (
     UserRequest,
 )
 from src.strategy import StrategyAgent
-
-
-def setup_logging(level: str = "INFO"):
-    """配置 loguru 日志."""
-    logger.remove()
-    logger.add(
-        sys.stderr,
-        level=level,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-    )
 
 
 def parse_args():
@@ -92,8 +82,9 @@ def create_user_request(args) -> UserRequest:
             base_url=settings.llm.summary.base_url,
             temperature=settings.llm.summary.temperature,
         )
-        logger.info(
-            f"Summary LLM 已配置: {settings.llm.summary.provider}/{settings.llm.summary.model}"
+        cprint(
+            f"Summary LLM 已配置: {settings.llm.summary.provider}/{settings.llm.summary.model}",
+            "white"
         )
 
     # Build LLM config from YAML + secrets
@@ -176,9 +167,9 @@ async def main():
 
     if args.list_templates:
         from src.strategy import list_templates
-        logger.info("可用模板:")
+        cprint("可用模板:", "white")
         for name in list_templates():
-            logger.info(f"  - {name}")
+            cprint(f"  - {name}", "white")
         return
 
     # 记载环境变量
@@ -187,54 +178,56 @@ async def main():
 
     # 读取配置文件
     settings = get_settings()
-    setup_logging(settings.logging_config.level)
 
     template = args.template if args.template else settings.strategy.template
     symbols = args.symbols if args.symbols else settings.strategy.symbols
     mode = args.mode if args.mode else settings.strategy.trading_mode
     interval = args.interval if args.interval else settings.strategy.decide_interval
 
-    logger.info("=" * 50)
-    logger.info("NOFN Trading System")
-    logger.info("=" * 50)
+    cprint("=" * 50, "cyan")
+    cprint("NOFN Trading System", "cyan", attrs=["bold"])
+    cprint("=" * 50, "cyan")
 
     # 反思模式
     enable_reflection = args.reflection
 
-    logger.info(f"交易所: {settings.exchange.id.upper()}")
-    logger.info(f"交易对: {symbols}")
-    logger.info(f"策略模版: {template}")
-    logger.info(f"运行间隔: {interval}s")
-    logger.info(f"模式: {mode.upper()}")
-    logger.info(f"LLM: {settings.llm.provider}/{settings.llm.model}")
+    cprint(f"交易所: {settings.exchange.id.upper()}", "white")
+    cprint(f"交易对: {symbols}", "white")
+    cprint(f"策略模版: {template}", "white")
+    cprint(f"运行间隔: {interval}s", "white")
+    cprint(f"模式: {mode.upper()}", "white")
+    cprint(f"LLM: {settings.llm.provider}/{settings.llm.model}", "white")
+
     agent = None
     try:
         request = create_user_request(args)
 
-        logger.info("正在初始化策略代理...")
+        cprint("正在初始化策略代理...", "white")
         agent = StrategyAgent(
             request,
             enable_reflection=enable_reflection,
         )
 
         strategy_id = await agent.start()
-        logger.success(f"策略已启动: {strategy_id}")
+        cprint(f"✓ 策略已启动: {strategy_id}", "green")
 
-        logger.info("=" * 50)
-        logger.info("开始交易循环")
-        logger.info("=" * 50)
+        cprint("=" * 50, "cyan")
+        cprint("开始交易循环", "cyan", attrs=["bold"])
+        cprint("=" * 50, "cyan")
 
         # Run the agent
         await agent.run()
 
     except KeyboardInterrupt:
-        logger.warning("收到中断信号，正在停止...")
+        cprint("收到中断信号，正在停止...", "yellow")
         if agent:
             await agent.stop()
     except Exception as e:
-        logger.exception(f"系统错误: {e}")
+        import traceback
+        cprint(f"✗ 系统错误: {e}", "red")
+        traceback.print_exc()
     finally:
-        logger.warning("交易系统已停止")
+        cprint("交易系统已停止", "yellow")
 
 
 if __name__ == "__main__":

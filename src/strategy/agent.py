@@ -15,7 +15,7 @@
 import asyncio
 from typing import Optional
 
-from loguru import logger
+from termcolor import cprint
 
 from src.trading import (
     DecisionCycleResult,
@@ -81,7 +81,7 @@ class StrategyAgent:
         if self._enable_reflection:
             from src.trading.reflection import ReflectiveComposer
 
-            logger.info("启用反思模式(Reflection Mode)")
+            cprint("启用反思模式(Reflection Mode)", "white")
             return ReflectiveComposer(
                 request=self._request,
                 enable_cooldown=True,
@@ -113,10 +113,10 @@ class StrategyAgent:
 
             if isinstance(composer, ReflectiveComposer) and self._runtime.history_recorder:
                 composer.set_history_recorder(self._runtime.history_recorder)
-                logger.info("反思模式已连接历史记录器")
+                cprint("反思模式已连接历史记录器", "white")
 
         strategy_id = self._runtime.strategy_id
-        logger.info(f"策略已启动: {strategy_id}")
+        cprint(f"策略已启动: {strategy_id}", "green")
 
         self._running = True
         return strategy_id
@@ -129,21 +129,23 @@ class StrategyAgent:
         strategy_id = self._runtime.strategy_id
         interval = self._request.trading_config.decide_interval
 
-        logger.info(f"开始决策循环: {strategy_id}")
+        cprint(f"开始决策循环: {strategy_id}", "white")
 
         try:
             while self._running:
                 result = await self._runtime.run_cycle()
-                logger.info(
+                cprint(
                     f"周期 {result.cycle_index} 完成: "
                     f"{len(result.trades)} 笔交易, "
-                    f"盈亏: {result.strategy_summary.realized_pnl:.2f}"
+                    f"盈亏: {result.strategy_summary.realized_pnl:.2f}",
+                    "white"
                 )
 
                 for inst in result.instructions:
-                    logger.info(
+                    cprint(
                         f"  -> {inst.action.value if inst.action else 'N/A'} "
-                        f"{inst.instrument.symbol} 数量={inst.quantity}"
+                        f"{inst.instrument.symbol} 数量={inst.quantity}",
+                        "white"
                     )
 
                 # 等待下一个循环
@@ -152,23 +154,23 @@ class StrategyAgent:
                         break
                     await asyncio.sleep(1)
 
-            logger.info(f"策略已停止: {strategy_id}")
+            cprint(f"策略已停止: {strategy_id}", "white")
             self._stop_reason = StopReason.NORMAL_EXIT
 
         except asyncio.CancelledError:
             self._stop_reason = StopReason.CANCELLED
-            logger.info(f"策略已取消: {strategy_id}")
+            cprint(f"策略已取消: {strategy_id}", "yellow")
             raise
         except Exception as e:
             self._stop_reason = StopReason.ERROR
-            logger.exception(f"策略错误: {e}")
+            cprint(f"策略错误: {e}", "red"); import traceback; traceback.print_exc()
             raise
         finally:
             await self._cleanup()
 
     async def stop(self) -> None:
         """优雅停止策略。"""
-        logger.info("正在停止策略...")
+        cprint("正在停止策略...", "white")
         self._running = False
 
     async def _cleanup(self) -> None:
@@ -177,15 +179,15 @@ class StrategyAgent:
             try:
                 trades = await self._runtime.coordinator.close_all_positions()
                 if trades:
-                    logger.info(f"关闭时平仓 {len(trades)} 个持仓")
+                    cprint(f"关闭时平仓 {len(trades)} 个持仓")
             except Exception:
-                logger.exception("平仓时出错")
+                cprint("平仓时出错", "red"); import traceback; traceback.print_exc()
                 self._stop_reason = StopReason.ERROR_CLOSING_POSITIONS
 
             try:
                 await self._runtime.coordinator.close()
             except Exception:
-                logger.exception("关闭协调器时出错")
+                cprint("关闭协调器时出错", "red"); import traceback; traceback.print_exc()
 
     @property
     def strategy_id(self) -> Optional[str]:

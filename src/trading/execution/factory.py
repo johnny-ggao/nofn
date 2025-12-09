@@ -1,6 +1,6 @@
 """Factory for creating execution gateways."""
 
-from loguru import logger
+from termcolor import cprint
 
 from ..models import ExchangeConfig, TradingMode
 from .interfaces import BaseExecutionGateway
@@ -18,7 +18,7 @@ async def create_execution_gateway(config: ExchangeConfig) -> BaseExecutionGatew
         Execution gateway (paper or live)
     """
     if config.trading_mode == TradingMode.VIRTUAL:
-        logger.info(f"Creating PaperExecutionGateway for virtual trading (settle_coin={config.settle_coin})")
+        cprint(f"Creating PaperExecutionGateway for virtual trading (settle_coin={config.settle_coin})", "white")
         return PaperExecutionGateway(
             initial_balance=10000.0,  # Will be overridden by runtime
             fee_bps=config.fee_bps,
@@ -26,7 +26,7 @@ async def create_execution_gateway(config: ExchangeConfig) -> BaseExecutionGatew
         )
 
     # Live trading - create CCXT gateway
-    logger.info(f"Creating CCXTExecutionGateway for {config.exchange_id}")
+    cprint(f"Creating CCXTExecutionGateway for {config.exchange_id}", "white")
 
     if not config.exchange_id:
         raise ValueError("exchange_id is required for live trading")

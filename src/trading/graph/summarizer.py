@@ -5,7 +5,7 @@
 
 from typing import List, Optional
 
-from loguru import logger
+from termcolor import cprint
 
 from .state import (
     DecisionMemory,
@@ -56,7 +56,7 @@ async def generate_summary_with_llm(
             summary = await llm_call(prompt)
             return summary.strip()
         except Exception as e:
-            logger.warning(f"LLM 摘要生成失败，使用默认摘要: {e}")
+            cprint(f"LLM 摘要生成失败，使用默认摘要: {e}", "yellow")
 
     # 默认摘要（不依赖 LLM）
     return _generate_simple_summary(memories)
@@ -124,9 +124,10 @@ async def maybe_generate_summary(
     # 创建摘要对象
     summary = create_summary_from_memories(to_summarize, summary_content)
 
-    logger.info(
+    cprint(
         f"生成决策摘要: 周期{summary['cycle_range'][0]}-{summary['cycle_range'][1]}, "
-        f"{summary['total_decisions']}次决策, PnL={summary['total_pnl']:.4f}"
+        f"{summary['total_decisions']}次决策, PnL={summary['total_pnl']:.4f}",
+        "cyan"
     )
 
     return summary

@@ -6,7 +6,7 @@
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-from loguru import logger
+from termcolor import cprint
 
 from ..models import (
     HistoryRecord,

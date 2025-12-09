@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Any
 
-from loguru import logger
+from termcolor import cprint
 from sqlalchemy.orm import Session
 
 from .connection import get_database_manager
@@ -69,7 +69,7 @@ class PersistenceService:
             session.add(strategy)
             session.commit()
             session.refresh(strategy)
-            logger.debug(f"创建策略记录: {strategy_id}")
+            cprint(f"创建策略记录: {strategy_id}", "magenta")
             return strategy
 
     def get_strategy(self, strategy_id: str) -> Optional[Strategy]:
@@ -88,7 +88,7 @@ class PersistenceService:
             if strategy:
                 strategy.status = status
                 session.commit()
-                logger.debug(f"更新策略状态: {strategy_id} -> {status}")
+                cprint(f"更新策略状态: {strategy_id} -> {status}", "magenta")
                 return True
             return False
 
@@ -176,7 +176,7 @@ class PersistenceService:
             session.add(detail)
             session.commit()
             session.refresh(detail)
-            logger.debug(f"保存交易: {trade_id} for {symbol}")
+            cprint(f"保存交易: {trade_id} for {symbol}", "magenta")
             return detail
 
     def save_trades_batch(
@@ -227,7 +227,7 @@ class PersistenceService:
             session.commit()
             for detail in details:
                 session.refresh(detail)
-            logger.debug(f"批量保存 {len(details)} 笔交易")
+            cprint(f"批量保存 {len(details)} 笔交易")
             return details
 
     def get_trades(
@@ -245,6 +245,79 @@ class PersistenceService:
                 query = query.filter(StrategyDetail.symbol == symbol)
             query = query.order_by(StrategyDetail.created_at.desc()).limit(limit)
             return query.all()
+
+    def get_trades_for_digest(
+        self,
+        strategy_id: str,
+        lookback_days: int = 7,
+        limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """获取用于摘要计算的历史交易记录。
+
+        返回适合构建 HistoryRecord 的格式。
+
+        Args:
+            strategy_id: 策略 ID
+            lookback_days: 回溯天数
+            limit: 最大记录数
+
+        Returns:
+            交易记录列表，按时间排序
+        """
+        from datetime import timedelta
+
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+
+        with self._get_session() as session:
+            trades = (
+                session.query(StrategyDetail)
+                .filter(StrategyDetail.strategy_id == strategy_id)
+                .filter(StrategyDetail.entry_time >= cutoff_time)
+                .order_by(StrategyDetail.entry_time.asc())
+                .limit(limit)
+                .all()
+            )
+
+            result = []
+            for trade in trades:
+                # 计算时间戳 (毫秒)
+                ts = None
+                if trade.entry_time:
+                    ts = int(trade.entry_time.timestamp() * 1000)
+
+                # 构建交易数据 (匹配 TradeHistoryEntry 格式)
+                trade_data = {
+                    "trade_id": trade.trade_id,
+                    "compose_id": trade.compose_id,
+                    "instruction_id": trade.instruction_id,
+                    "instrument": {"symbol": trade.symbol},
+                    "side": trade.side,
+                    "type": trade.type,
+                    "quantity": float(trade.quantity) if trade.quantity else 0.0,
+                    "entry_price": float(trade.entry_price) if trade.entry_price else None,
+                    "exit_price": float(trade.exit_price) if trade.exit_price else None,
+                    "avg_exec_price": float(trade.avg_exec_price) if trade.avg_exec_price else None,
+                    "realized_pnl": float(trade.realized_pnl) if trade.realized_pnl else None,
+                    "fee_cost": float(trade.fee_cost) if trade.fee_cost else None,
+                    "leverage": float(trade.leverage) if trade.leverage else None,
+                    "holding_ms": trade.holding_ms,
+                    "entry_ts": ts,
+                    "exit_ts": int(trade.exit_time.timestamp() * 1000) if trade.exit_time else None,
+                    "trade_ts": ts,
+                }
+
+                result.append({
+                    "ts": ts or int(datetime.now(timezone.utc).timestamp() * 1000),
+                    "compose_id": trade.compose_id,
+                    "trade": trade_data,
+                })
+
+            cprint(
+                f"从数据库加载 {len(result)} 条历史交易 (策略: {strategy_id}, "
+                f"回溯: {lookback_days} 天)",
+                "white"
+            )
+            return result
 
     # =========================================================================
     # 持仓快照操作
@@ -289,7 +362,7 @@ class PersistenceService:
             session.add(holding)
             session.commit()
             session.refresh(holding)
-            logger.debug(f"保存持仓快照: {symbol} qty={quantity}")
+            cprint(f"保存持仓快照: {symbol} qty={quantity}", "magenta")
             return holding
 
     def save_holdings_batch(
@@ -328,7 +401,7 @@ class PersistenceService:
             session.commit()
             for record in records:
                 session.refresh(record)
-            logger.debug(f"批量保存 {len(records)} 条持仓快照")
+            cprint(f"批量保存 {len(records)} 条持仓快照")
             return records
 
     def get_latest_holdings(
@@ -412,7 +485,7 @@ class PersistenceService:
                 memory.decisions = decisions
                 memory.pending_signals = pending_signals
                 memory.cycle_index = cycle_index
-                logger.debug(f"更新策略记忆: {strategy_id}, {len(decisions)} 条决策")
+                cprint(f"更新策略记忆: {strategy_id}, {len(decisions)} 条决策")
             else:
                 # 创建新记录
                 memory = StrategyMemory(
@@ -422,7 +495,7 @@ class PersistenceService:
                     cycle_index=cycle_index,
                 )
                 session.add(memory)
-                logger.debug(f"创建策略记忆: {strategy_id}, {len(decisions)} 条决策")
+                cprint(f"创建策略记忆: {strategy_id}, {len(decisions)} 条决策")
 
             session.commit()
             session.refresh(memory)
@@ -447,10 +520,10 @@ class PersistenceService:
             ).first()
 
             if not memory:
-                logger.debug(f"未找到策略记忆: {strategy_id}")
+                cprint(f"未找到策略记忆: {strategy_id}", "magenta")
                 return None
 
-            logger.debug(
+            cprint(
                 f"加载策略记忆: {strategy_id}, "
                 f"{len(memory.decisions or [])} 条决策, "
                 f"cycle={memory.cycle_index}"
@@ -479,7 +552,7 @@ class PersistenceService:
             if memory:
                 session.delete(memory)
                 session.commit()
-                logger.debug(f"删除策略记忆: {strategy_id}")
+                cprint(f"删除策略记忆: {strategy_id}", "magenta")
                 return True
 
             return False

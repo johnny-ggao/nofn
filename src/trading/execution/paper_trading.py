@@ -3,7 +3,7 @@
 from typing import Dict, List, Optional
 import time
 
-from loguru import logger
+from termcolor import cprint
 
 from ..models import (
     FeatureVector,
@@ -96,7 +96,7 @@ class PaperExecutionGateway(BaseExecutionGateway):
                 price = prices.get(normalized)
 
             if price is None:
-                logger.warning(f"No price found for {symbol} in paper trading")
+                cprint(f"No price found for {symbol} in paper trading", "yellow")
                 results.append(
                     TxResult(
                         instruction_id=inst.instruction_id,

@@ -25,7 +25,7 @@ import uuid
 from langgraph.store.base import BaseStore
 from langgraph.store.memory import InMemoryStore
 from langgraph.store.sqlite import AsyncSqliteStore
-from loguru import logger
+from termcolor import cprint
 
 if TYPE_CHECKING:
     from .vector_store import BaseVectorStore
@@ -156,10 +156,10 @@ class LongTermMemoryManager:
                 min_similarity=self._config.vector_min_similarity,
             )
             vector_store = create_vector_store(config=config)
-            logger.info("向量搜索已启用")
+            cprint("向量搜索已启用", "white")
             return vector_store
         except Exception as e:
-            logger.warning(f"无法初始化向量存储，向量搜索将被禁用: {e}")
+            cprint(f"无法初始化向量存储，向量搜索将被禁用: {e}", "yellow")
             return None
 
     def save_memory(
@@ -224,11 +224,12 @@ class LongTermMemoryManager:
                     },
                 )
             except Exception as e:
-                logger.warning(f"写入向量存储失败: {e}")
+                cprint(f"写入向量存储失败: {e}", "yellow")
 
-        logger.debug(
+        cprint(
             f"保存长期记忆: {memory_id}, type={memory_type.value}, "
-            f"strategy={strategy_id}, vector={self._vector_store is not None}"
+            f"strategy={strategy_id}, vector={self._vector_store is not None}",
+            "magenta"
         )
 
         return memory_id
@@ -358,7 +359,7 @@ class LongTermMemoryManager:
                 min_importance=min_importance,
             )
         except Exception as e:
-            logger.warning(f"向量搜索失败: {e}")
+            cprint(f"向量搜索失败: {e}", "yellow")
             return []
 
         if not vector_results:
@@ -414,9 +415,9 @@ class LongTermMemoryManager:
             try:
                 self._vector_store.delete_memory(strategy_id, memory_id)
             except Exception as e:
-                logger.warning(f"从向量存储删除失败: {e}")
+                cprint(f"从向量存储删除失败: {e}", "yellow")
 
-        logger.debug(f"删除长期记忆: {memory_id}, strategy={strategy_id}")
+        cprint(f"删除长期记忆: {memory_id}, strategy={strategy_id}", "magenta")
 
     def archive_summary(
         self,
@@ -466,9 +467,10 @@ class LongTermMemoryManager:
         )
         memory_ids.append(memory_id)
 
-        logger.info(
+        cprint(
             f"归档摘要为长期记忆: {memory_id}, "
-            f"cycles={cycle_range}, pnl={total_pnl:.4f}"
+            f"cycles={cycle_range}, pnl={total_pnl:.4f}",
+            "cyan"
         )
 
         return memory_ids
@@ -557,7 +559,7 @@ def get_sqlite_store_context(
     # 确保目录存在
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"LangGraph Store 路径: {db_path}")
+    cprint(f"LangGraph Store 路径: {db_path}", "white")
     return AsyncSqliteStore.from_conn_string(db_path)
 
 

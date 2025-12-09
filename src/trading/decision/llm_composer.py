@@ -6,33 +6,29 @@ structured LLM outputs instead of Agno.
 
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import JsonOutputParser
-from loguru import logger
+from termcolor import cprint
 from pydantic import BaseModel, Field, ValidationError
 
 from ..models import (
     ComposeContext,
     ComposeResult,
-    FeatureVector,
-    InstrumentRef,
     PriceMode,
     TradeDecisionAction,
     TradeDecisionItem,
     TradeInstruction,
     TradePlanProposal,
-    TradeSide,
     UserRequest,
     derive_side_from_action,
     get_current_timestamp_ms,
 )
 from .interfaces import BaseComposer
 from .system_prompt import SYSTEM_PROMPT
-from .llm_factory import create_llm, create_llm_from_config
+from .llm_factory import create_llm_from_config
 
 # Import template loader
 from ..templates import (
@@ -173,9 +169,9 @@ class LlmComposer(BaseComposer):
             try:
                 loader = get_template_loader()
                 main_prompt = loader.load(template_id)
-                logger.debug(f"Loaded template '{template_id}' for strategy")
+                cprint(f"Loaded template '{template_id}' for strategy", "white")
             except TemplateNotFoundError as e:
-                logger.warning(f"Template not found: {e}, using default")
+                cprint(f"Template not found: {e}, using default", "yellow")
                 main_prompt = None
 
         # Fallback: simple symbol-based prompt
@@ -192,41 +188,17 @@ class LlmComposer(BaseComposer):
     async def compose(self, context: ComposeContext) -> ComposeResult:
         """Compose trading instructions from context."""
         prompt = self._build_llm_prompt(context)
-
-        # 格式化打印 prompt (美化 JSON 输出)
-        try:
-            import json as json_module
-            prompt_data = json_module.loads(prompt.split("Context:\n")[1]) if "Context:\n" in prompt else None
-            logger.info("=" * 80)
-            logger.info("LLM Prompt:")
-            logger.info("=" * 80)
-            # 打印指令部分
-            instructions_part = prompt.split("Context:\n")[0] if "Context:\n" in prompt else ""
-            for line in instructions_part.strip().split("\n"):
-                logger.info(line)
-            # 美化打印 JSON 上下文
-            # if prompt_data:
-            #     logger.info("-" * 80)
-            #     logger.info("Context (formatted):")
-            #     logger.info("-" * 80)
-            #     formatted_json = json_module.dumps(prompt_data, indent=2, ensure_ascii=False)
-            #     for line in formatted_json.split("\n"):
-            #         logger.info(line)
-            # logger.info("=" * 80)
-        except Exception:
-            # 回退到简单打印
-            logger.info(f"LLM Prompt:\n{prompt}")
-
         try:
             plan = await self._call_llm(prompt)
             if not plan.items:
-                logger.info(
+                cprint(
                     f"LLM 返回空的执行计划 compose_id={context.compose_id} "
-                    f"依据={plan.rationale}"
+                    f"依据={plan.rationale}",
+                    "white"
                 )
                 return ComposeResult(instructions=[], rationale=plan.rationale)
         except Exception as exc:
-            logger.error(f"LLM invocation failed: {exc}")
+            cprint(f"LLM invocation failed: {exc}", "red")
             return ComposeResult(
                 instructions=[],
                 rationale=f"LLM invocation failed: {exc}",
@@ -254,13 +226,13 @@ class LlmComposer(BaseComposer):
         }
 
     def _build_history_section(self, context: ComposeContext) -> Optional[Dict]:
-        """Build history section from recent decisions and historical summaries.
+        """根据近期决策和历史摘要构建历史章节。
 
         Args:
-            context: Compose context containing recent_decisions and history_summaries
+            context: 构建包含 recent_decisions 和 history_summaries 的上下文
 
         Returns:
-            History section dict or None if no history
+            历史记录部分字典，如果没有历史记录，则为 None
         """
         has_history = (
             context.recent_decisions
@@ -366,6 +338,7 @@ class LlmComposer(BaseComposer):
 
         instructions = (
             "阅读上下文并为每个交易对分别进行独立分析和决策。\n\n"
+            "features.15m = 结构趋势（240 个周期），features.1m = 实时信号（180 个周期）"
             f"待分析交易对: {symbols}\n\n"
             "分析要求:\n"
             "1. 对每个交易对进行独立的技术分析，不要混合分析\n"
@@ -390,7 +363,7 @@ class LlmComposer(BaseComposer):
     async def _call_llm(self, prompt: str) -> TradePlanProposal:
         """调用 LLM 获取结构化交易计划。
 
-        使用 with_structured_output() 直接获取 Pydantic 模型。
+        使用 JsonOutputParser 解析 JSON 输出（兼容 DeepSeek 等不支持 response_format 的模型）。
         """
         messages = [
             SystemMessage(content=SYSTEM_PROMPT),
@@ -398,53 +371,148 @@ class LlmComposer(BaseComposer):
         ]
 
         try:
-            structured_llm = self._llm.with_structured_output(TradePlanProposal)
-            result = await structured_llm.ainvoke(messages)
+            # 使用普通调用 + JSON 解析（兼容性更好）
+            response = await self._llm.ainvoke(messages)
+
+            # 提取内容
+            content = response.content if hasattr(response, 'content') else str(response)
+
+            # 尝试从 markdown 代码块中提取 JSON
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                # 可能是没有语言标记的代码块
+                parts = content.split("```")
+                if len(parts) >= 2:
+                    content = parts[1].strip()
+
+            # 解析 JSON
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                # 尝试查找 JSON 对象
+                import re
+                json_match = re.search(r'\{[\s\S]*\}', content)
+                if json_match:
+                    data = json.loads(json_match.group())
+                else:
+                    cprint(f"Cannot find JSON in response: {content[:500]}", "red")
+                    return TradePlanProposal(items=[], rationale="Cannot parse JSON from response")
+
+            # 构建 TradePlanProposal
+            items = []
+            for item_data in data.get("items", []):
+                try:
+                    items.append(TradeDecisionItem(**item_data))
+                except Exception as e:
+                    cprint(f"Failed to parse item: {item_data}, error: {e}", "yellow")
+
+            result = TradePlanProposal(
+                ts=get_current_timestamp_ms(),
+                items=items,
+                rationale=data.get("rationale"),
+            )
 
             # 打印 LLM 决策结果
-            logger.info("=" * 60)
-            logger.info("LLM 决策结果:")
-            logger.info("=" * 60)
-            if isinstance(result, TradePlanProposal):
-                for i, item in enumerate(result.items):
-                    logger.info(
-                        f"[{i+1}] {item.instrument.symbol}: {item.action.value} "
-                        f"qty={item.target_qty} leverage={item.leverage} "
-                        f"confidence={item.confidence} sl={item.sl_price} tp={item.tp_price}"
-                    )
-                    logger.info(f"    理由: {item.rationale[:100] if item.rationale else 'N/A'}...")
-                logger.info(f"整体决策: {result.rationale[:200] if result.rationale else 'N/A'}...")
-            elif isinstance(result, dict):
-                logger.info(f"Raw dict: {json.dumps(result, ensure_ascii=False, indent=2)[:500]}")
-            logger.info("=" * 60)
+            self._print_decision_result(result)
 
-            # 确保返回正确类型
-            if isinstance(result, TradePlanProposal):
-                result.ts = get_current_timestamp_ms()
-                return result
-            elif isinstance(result, dict):
-                return TradePlanProposal(
-                    ts=get_current_timestamp_ms(),
-                    items=[
-                        TradeDecisionItem(**item)
-                        for item in result.get("items", [])
-                    ],
-                    rationale=result.get("rationale"),
-                )
-
-            # 不应该到达这里
-            logger.error(f"Unexpected result type: {type(result)}")
-            return TradePlanProposal(items=[], rationale="Unexpected result type")
+            return result
 
         except ValidationError as e:
-            logger.error(f"Validation error parsing LLM response: {e}")
+            cprint(f"Validation error parsing LLM response: {e}", "red")
             return TradePlanProposal(
                 items=[],
                 rationale=f"Validation error: {e}",
             )
         except Exception as e:
-            logger.error(f"Error calling LLM: {e}")
+            cprint(f"Error calling LLM: {e}", "red")
             raise
+
+    def _print_decision_result(self, result: TradePlanProposal) -> None:
+        """打印格式化的 LLM 决策结果."""
+        # 动作类型映射到中文和颜色
+        action_display = {
+            "open_long": ("开多", "green"),
+            "open_short": ("开空", "red"),
+            "close_long": ("平多", "yellow"),
+            "close_short": ("平空", "yellow"),
+            "hold": ("持有", "white"),
+        }
+
+        cprint("\n" + "=" * 70, "cyan")
+        cprint("                    📊 LLM 决策结果", "cyan", attrs=["bold"])
+        cprint("=" * 70, "cyan")
+
+        if not result.items:
+            cprint("  (无交易指令)", "white")
+        else:
+            for i, item in enumerate(result.items, 1):
+                symbol = item.instrument.symbol
+                action_val = item.action.value if hasattr(item.action, 'value') else str(item.action)
+                action_cn, action_color = action_display.get(action_val, (action_val, "white"))
+
+                # 标题行
+                cprint(f"\n  [{i}] {symbol}", "white", attrs=["bold"])
+                cprint("  " + "-" * 40, "white")
+
+                # 动作和置信度
+                confidence_pct = f"{(item.confidence or 0) * 100:.0f}%" if item.confidence else "N/A"
+                cprint(f"      动作: {action_cn:<8}  置信度: {confidence_pct}", action_color)
+
+                # 数量和杠杆
+                qty_str = f"{item.target_qty:.6f}".rstrip('0').rstrip('.') if item.target_qty else "N/A"
+                leverage_str = f"{item.leverage:.0f}x" if item.leverage else "N/A"
+                cprint(f"      数量: {qty_str:<12}  杠杆: {leverage_str}", "white")
+
+                # 止损止盈
+                sl_str = f"{item.sl_price:.4f}" if item.sl_price else "未设置"
+                tp_str = f"{item.tp_price:.4f}" if item.tp_price else "未设置"
+                cprint(f"      止损: {sl_str:<12}  止盈: {tp_str}", "white")
+
+                # 理由
+                if item.rationale:
+                    rationale = item.rationale.strip()
+                    # 自动换行显示完整理由
+                    cprint("      理由:", "white")
+                    # 按行分割并缩进显示
+                    lines = self._wrap_text(rationale, width=60)
+                    for line in lines:
+                        cprint(f"        {line}", "white")
+
+        # 整体决策理由
+        cprint("\n" + "-" * 70, "cyan")
+        cprint("  📝 整体决策:", "cyan", attrs=["bold"])
+        if result.rationale:
+            lines = self._wrap_text(result.rationale.strip(), width=65)
+            for line in lines:
+                cprint(f"     {line}", "white")
+        else:
+            cprint("     (无)", "white")
+
+        cprint("=" * 70 + "\n", "cyan")
+
+    def _wrap_text(self, text: str, width: int = 60) -> List[str]:
+        """将长文本按指定宽度换行."""
+        lines = []
+        # 先按换行符分割
+        for paragraph in text.split('\n'):
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+            # 按宽度分割（简单实现，按字符数）
+            while len(paragraph) > width:
+                # 找一个合适的断点
+                break_point = width
+                # 尝试在空格或标点处断开
+                for i in range(width, max(width - 20, 0), -1):
+                    if paragraph[i] in ' ，。、；：！？,.;:!? ':
+                        break_point = i + 1
+                        break
+                lines.append(paragraph[:break_point].strip())
+                paragraph = paragraph[break_point:].strip()
+            if paragraph:
+                lines.append(paragraph)
+        return lines if lines else ["(无)"]
 
     # 默认止损百分比（用于开仓时 LLM 未给出止损价的情况）
     DEFAULT_SL_PCT = 0.02  # 2%
@@ -478,31 +546,35 @@ class LlmComposer(BaseComposer):
             default_sl = entry_price * (1 + self.DEFAULT_SL_PCT)
 
         if sl_price is None:
-            logger.debug(f"No sl_price provided, using default: {default_sl:.6f}")
+            cprint(f"No sl_price provided, using default: {default_sl:.6f}", "white")
             return default_sl
 
         # 验证方向正确性
         if is_long and sl_price >= entry_price:
-            logger.warning(
-                f"Invalid sl_price for long: {sl_price} >= entry {entry_price}, using default"
+            cprint(
+                f"Invalid sl_price for long: {sl_price} >= entry {entry_price}, using default",
+                "yellow"
             )
             return default_sl
         if not is_long and sl_price <= entry_price:
-            logger.warning(
-                f"Invalid sl_price for short: {sl_price} <= entry {entry_price}, using default"
+            cprint(
+                f"Invalid sl_price for short: {sl_price} <= entry {entry_price}, using default",
+                "yellow"
             )
             return default_sl
 
         # 验证止损幅度在合理范围内
         sl_pct = abs(sl_price - entry_price) / entry_price
         if sl_pct < self.MIN_SL_PCT:
-            logger.warning(
-                f"sl_price too tight ({sl_pct:.2%} < {self.MIN_SL_PCT:.2%}), using default"
+            cprint(
+                f"sl_price too tight ({sl_pct:.2%} < {self.MIN_SL_PCT:.2%}), using default",
+                "yellow"
             )
             return default_sl
         if sl_pct > self.MAX_SL_PCT:
-            logger.warning(
-                f"sl_price too wide ({sl_pct:.2%} > {self.MAX_SL_PCT:.2%}), clamping"
+            cprint(
+                f"sl_price too wide ({sl_pct:.2%} > {self.MAX_SL_PCT:.2%}), clamping",
+                "yellow"
             )
             if is_long:
                 return entry_price * (1 - self.MAX_SL_PCT)
@@ -534,13 +606,15 @@ class LlmComposer(BaseComposer):
 
         # 验证方向正确性
         if is_long and tp_price <= entry_price:
-            logger.warning(
-                f"Invalid tp_price for long: {tp_price} <= entry {entry_price}, ignoring"
+            cprint(
+                f"Invalid tp_price for long: {tp_price} <= entry {entry_price}, ignoring",
+                "yellow"
             )
             return None
         if not is_long and tp_price >= entry_price:
-            logger.warning(
-                f"Invalid tp_price for short: {tp_price} >= entry {entry_price}, ignoring"
+            cprint(
+                f"Invalid tp_price for short: {tp_price} >= entry {entry_price}, ignoring",
+                "yellow"
             )
             return None
 
@@ -549,8 +623,9 @@ class LlmComposer(BaseComposer):
             risk = abs(entry_price - sl_price)
             reward = abs(tp_price - entry_price)
             if reward < risk:
-                logger.debug(
-                    f"tp/sl ratio {reward/risk:.2f} < 1, consider adjusting"
+                cprint(
+                    f"tp/sl ratio {reward/risk:.2f} < 1, consider adjusting",
+                    "yellow"
                 )
 
         return tp_price
@@ -590,19 +665,21 @@ class LlmComposer(BaseComposer):
                 if current_pos and abs(current_pos.quantity) > 0:
                     pos_qty = abs(current_pos.quantity)
                     if qty <= 0 or qty < pos_qty * 0.01:  # qty is 0 or negligible
-                        logger.info(
-                            f"{symbol}: 平仓操作 qty={qty} 太小，使用当前持仓量 {pos_qty}"
+                        cprint(
+                            f"{symbol}: 平仓操作 qty={qty} 太小，使用当前持仓量 {pos_qty}",
+                            "white"
                         )
                         qty = pos_qty
                 else:
-                    logger.warning(f"{symbol}: 平仓操作但无持仓，跳过")
+                    cprint(f"{symbol}: 平仓操作但无持仓，跳过", "yellow")
                     continue
 
             # Apply quantity constraints
             if constraints:
                 if constraints.min_trade_qty and qty < constraints.min_trade_qty:
-                    logger.warning(
-                        f"Skipping {symbol}: qty {qty} < min {constraints.min_trade_qty}"
+                    cprint(
+                        f"Skipping {symbol}: qty {qty} < min {constraints.min_trade_qty}",
+                        "yellow"
                     )
                     continue
                 if constraints.max_order_qty and qty > constraints.max_order_qty:
@@ -629,7 +706,7 @@ class LlmComposer(BaseComposer):
                         break
 
             if not price:
-                logger.warning(f"{symbol}: 无法从 features 获取价格，止损将无法设置")
+                cprint(f"{symbol}: 无法从 features 获取价格，止损将无法设置", "yellow")
 
             if price:
                 notional = qty * float(price)
@@ -649,8 +726,9 @@ class LlmComposer(BaseComposer):
                         # Reduce size to fit
                         qty = (available_bp * leverage) / float(price) * 0.95  # 5% buffer
                         if qty <= 0:
-                            logger.warning(
-                                f"Skipping {symbol}: insufficient buying power"
+                            cprint(
+                                f"Skipping {symbol}: insufficient buying power",
+                                "yellow"
                             )
                             continue
                         margin_required = (qty * float(price)) / leverage
@@ -659,13 +737,14 @@ class LlmComposer(BaseComposer):
 
             # Skip if quantity too small after adjustments
             if qty < self._quantity_precision:
-                logger.warning(f"Skipping {symbol}: qty too small after adjustments")
+                cprint(f"Skipping {symbol}: qty too small after adjustments", "yellow")
                 continue
 
             # Re-check min_trade_qty after all adjustments (quantity_step, cap, etc.)
             if constraints and constraints.min_trade_qty and qty < constraints.min_trade_qty:
-                logger.warning(
-                    f"Skipping {symbol}: adjusted qty {qty} < min_trade_qty {constraints.min_trade_qty}"
+                cprint(
+                    f"Skipping {symbol}: adjusted qty {qty} < min_trade_qty {constraints.min_trade_qty}",
+                    "yellow"
                 )
                 continue
 
@@ -697,24 +776,27 @@ class LlmComposer(BaseComposer):
                         # Add back what we already deducted for this position
                         effective_available = available_bp + original_margin
                         if bumped_margin <= effective_available * 0.95:  # Leave some buffer
-                            logger.info(
+                            cprint(
                                 f"{symbol}: bumping qty from {qty} to {min_qty_for_notional} "
-                                f"to meet min_notional {min_notional}"
+                                f"to meet min_notional {min_notional}",
+                                "white"
                             )
                             qty = min_qty_for_notional
                             # Adjust available_bp: add back original deduction, deduct new amount
                             available_bp = effective_available - bumped_margin
                         else:
-                            logger.warning(
+                            cprint(
                                 f"Skipping {symbol}: notional {notional:.2f} < min_notional {min_notional}, "
-                                f"insufficient buying power to bump up"
+                                f"insufficient buying power to bump up",
+                                "yellow"
                             )
                             continue
                     else:
                         # For closing positions, just bump up the qty (no margin needed)
-                        logger.info(
+                        cprint(
                             f"{symbol}: bumping close qty from {qty} to {min_qty_for_notional} "
-                            f"to meet min_notional {min_notional}"
+                            f"to meet min_notional {min_notional}",
+                            "white"
                         )
                         qty = min_qty_for_notional
 
@@ -742,9 +824,10 @@ class LlmComposer(BaseComposer):
 
                 if sl_price:
                     tp_str = f"{tp_price:.2f}" if tp_price else "N/A"
-                    logger.info(
+                    cprint(
                         f"{symbol} {'LONG' if is_long else 'SHORT'}: "
-                        f"entry≈{entry_price:.2f}, sl={sl_price:.2f}, tp={tp_str}"
+                        f"entry≈{entry_price:.2f}, sl={sl_price:.2f}, tp={tp_str}",
+                        "white"
                     )
 
             # Create instruction

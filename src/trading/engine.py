@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import uuid
 
-from loguru import logger
+from termcolor import cprint
 
 from .db import PersistenceService, get_persistence_service
 from .decision import BaseComposer, LlmComposer
@@ -156,7 +156,7 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                         break
 
                 if found_ccy:
-                    logger.debug(f"同步 {found_ccy} 余额: free={free_cash}, total={total_cash}")
+                    cprint(f"同步 {found_ccy} 余额: free={free_cash}, total={total_cash}", "white")
 
                 if self._request.exchange_config.market_type == MarketType.SPOT:
                     portfolio.account_balance = float(free_cash)
@@ -179,9 +179,9 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                         # 重新获取更新后的视图
                         portfolio = self.portfolio_service.get_view()
                     except Exception as e:
-                        logger.warning(f"无法从交易所同步持仓: {e}")
+                        cprint(f"无法从交易所同步持仓: {e}", "yellow")
         except Exception:
-            logger.warning("无法从交易所同步余额，使用缓存视图")
+            cprint("无法从交易所同步余额，使用缓存视图", "yellow")
 
         # VIRTUAL 模式: 现货只能用可用资金
         if self._request.exchange_config.trading_mode == TradingMode.VIRTUAL:
@@ -218,14 +218,14 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
         compose_result = await self._composer.compose(context)
         instructions = compose_result.instructions
         rationale = compose_result.rationale
-        logger.info(f"决策器返回 {len(instructions)} 条指令")
+        cprint(f"决策器返回 {len(instructions)} 条指令", "white")
 
         # 执行指令
-        logger.info(f"执行 {len(instructions)} 条指令")
+        cprint(f"执行 {len(instructions)} 条指令", "white")
         tx_results = await self._execution_gateway.execute(
             instructions, market_features=market_features
         )
-        logger.info(f"执行网关返回 {len(tx_results)} 个结果")
+        cprint(f"执行网关返回 {len(tx_results)} 个结果", "white")
 
         # 过滤失败的指令
         failed_ids = set()
@@ -236,7 +236,7 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                 reason = tx.reason or "未知错误"
                 msg = f"跳过 {tx.instrument.symbol} {tx.side.value}: {reason}"
                 failure_msgs.append(msg)
-                logger.warning(f"订单被拒: {msg}")
+                cprint(f"订单被拒: {msg}", "yellow")
 
         if failure_msgs:
             prefix = "\n\n**执行警告:**\n"
@@ -348,16 +348,18 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                     close_qty = min(qty, abs(pos.quantity))
                     pnl = (price - pos.avg_price) * close_qty
                     realized_pnl += pnl
-                    logger.debug(
-                        f"{symbol} 平多盈亏: ({price:.2f} - {pos.avg_price:.2f}) * {close_qty} = {pnl:.2f}"
+                    cprint(
+                        f"{symbol} 平多盈亏: ({price:.2f} - {pos.avg_price:.2f}) * {close_qty} = {pnl:.2f}",
+                        "green" if pnl >= 0 else "red"
                     )
                 elif tx.side == TradeSide.BUY and pos.quantity < 0:
                     # 平空: (入场价 - 买入价) * 数量
                     close_qty = min(qty, abs(pos.quantity))
                     pnl = (pos.avg_price - price) * close_qty
                     realized_pnl += pnl
-                    logger.debug(
-                        f"{symbol} 平空盈亏: ({pos.avg_price:.2f} - {price:.2f}) * {close_qty} = {pnl:.2f}"
+                    cprint(
+                        f"{symbol} 平空盈亏: ({pos.avg_price:.2f} - {price:.2f}) * {close_qty} = {pnl:.2f}",
+                        "green" if pnl >= 0 else "red"
                     )
 
             trade = TradeHistoryEntry(
@@ -481,7 +483,9 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                 cycle_index=self._short_term_memory.get_last_cycle_index(),
             )
         except Exception:
-            logger.exception("持久化记忆失败")
+            import traceback
+            cprint("持久化记忆失败", "red")
+            traceback.print_exc()
 
     def _persist_cycle_data(
         self,
@@ -547,17 +551,19 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                     self._persistence_service.save_holdings_batch(holdings_data)
 
         except Exception:
-            logger.exception("持久化周期数据失败")
+            import traceback
+            cprint("持久化周期数据失败", "red")
+            traceback.print_exc()
 
     async def close_all_positions(self) -> List[TradeHistoryEntry]:
         """平掉所有持仓。"""
         try:
-            logger.info(f"正在平掉策略 {self.strategy_id} 的所有持仓")
+            cprint(f"正在平掉策略 {self.strategy_id} 的所有持仓", "white")
 
             portfolio = self.portfolio_service.get_view()
 
             if not portfolio.positions:
-                logger.info("没有持仓需要平掉")
+                cprint("没有持仓需要平掉", "white")
                 return []
 
             instructions = []
@@ -594,7 +600,7 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
             if not instructions:
                 return []
 
-            logger.info(f"执行 {len(instructions)} 条平仓指令")
+            cprint(f"执行 {len(instructions)} 条平仓指令", "white")
 
             # 获取市场特征用于定价
             market_features: List[FeatureVector] = []
@@ -605,7 +611,9 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                         pipeline_result.features or []
                     )
                 except Exception:
-                    logger.exception("构建平仓市场特征失败")
+                    import traceback
+                    cprint("构建平仓市场特征失败", "red")
+                    traceback.print_exc()
 
             # 执行
             tx_results = await self._execution_gateway.execute(
@@ -627,11 +635,13 @@ class DefaultDecisionCoordinator(DecisionCoordinator):
                     )
                 )
 
-            logger.info(f"成功平仓，生成 {len(trades)} 笔交易")
+            cprint(f"成功平仓，生成 {len(trades)} 笔交易", "green")
             return trades
 
         except Exception:
-            logger.exception(f"平仓失败: 策略 {self.strategy_id}")
+            import traceback
+            cprint(f"平仓失败: 策略 {self.strategy_id}", "red")
+            traceback.print_exc()
             return []
 
     async def close(self) -> None:
@@ -706,12 +716,12 @@ async def _fetch_free_cash(
             if val > 0:
                 free_cash = val
                 total_cash = float(total.get(ccy, 0) or 0)
-                logger.debug(f"使用 {ccy} 余额: free={free_cash}, total={total_cash}")
+                cprint(f"使用 {ccy} 余额: free={free_cash}, total={total_cash}", "white")
                 break
 
         return free_cash, total_cash
     except Exception as e:
-        logger.warning(f"获取余额失败: {e}")
+        cprint(f"获取余额失败: {e}", "yellow")
         return 0.0, 0.0
 
 
@@ -745,19 +755,19 @@ async def create_strategy_runtime(
             )
             if free_cash > 0:
                 request.trading_config.initial_capital = float(free_cash)
-                logger.info(f"LIVE 模式检测到 {request.exchange_config.settle_coin} 余额: {free_cash}")
+                cprint(f"LIVE 模式检测到 {request.exchange_config.settle_coin} 余额: {free_cash}", "white")
     except Exception:
-        logger.exception(
-            "LIVE 模式获取交易所余额失败，将使用配置的 initial_capital"
-        )
+        import traceback
+        cprint("LIVE 模式获取交易所余额失败，将使用配置的 initial_capital", "red")
+        traceback.print_exc()
 
     # 验证 LIVE 模式的初始资金
     if request.exchange_config.trading_mode == TradingMode.LIVE:
         initial_cap = request.trading_config.initial_capital or 0.0
         if initial_cap <= 0:
-            logger.error(
-                f"LIVE 模式 initial_capital={initial_cap}，"
-                "没有资金将无法交易"
+            cprint(
+                f"LIVE 模式 initial_capital={initial_cap}，没有资金将无法交易",
+                "red"
             )
 
     # 生成或使用提供的策略 ID
@@ -796,6 +806,23 @@ async def create_strategy_runtime(
     # 初始化持久化服务
     persistence_service = get_persistence_service()
 
+    # 从数据库加载历史交易记录（用于夏普率等统计）
+    try:
+        db_trades = persistence_service.get_trades_for_digest(
+            strategy_id=strategy_id,
+            lookback_days=7,
+        )
+        if db_trades:
+            loaded = history_recorder.load_from_db_trades(db_trades)
+            cprint(
+                f"从数据库恢复 {loaded} 条历史交易记录 (策略: {strategy_id})",
+                "white"
+            )
+    except Exception:
+        import traceback
+        cprint(f"恢复历史交易记录失败: {strategy_id}", "yellow")
+        traceback.print_exc()
+
     # 尝试恢复短期记忆（如果是复用策略）
     short_term_memory: Optional[ShortTermMemory] = None
     if strategy_id_override:
@@ -803,12 +830,15 @@ async def create_strategy_runtime(
             memory_state = persistence_service.load_memory(strategy_id)
             if memory_state:
                 short_term_memory = ShortTermMemory.from_state(memory_state)
-                logger.info(
+                cprint(
                     f"从数据库恢复策略记忆: {strategy_id}, "
-                    f"{len(short_term_memory)} 条决策记录"
+                    f"{len(short_term_memory)} 条决策记录",
+                    "white"
                 )
         except Exception:
-            logger.exception(f"恢复策略记忆失败: {strategy_id}")
+            import traceback
+            cprint(f"恢复策略记忆失败: {strategy_id}", "red")
+            traceback.print_exc()
 
     # 创建策略记录（新策略）
     if not strategy_id_override:
@@ -825,9 +855,11 @@ async def create_strategy_runtime(
                     "market_type": request.exchange_config.market_type.value,
                 },
             )
-            logger.info(f"策略 {strategy_id} 已持久化到数据库")
+            cprint(f"策略 {strategy_id} 已持久化到数据库", "white")
         except Exception:
-            logger.exception("创建策略记录失败")
+            import traceback
+            cprint("创建策略记录失败", "red")
+            traceback.print_exc()
 
     # 创建协调器
     coordinator = DefaultDecisionCoordinator(

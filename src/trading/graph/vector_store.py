@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, TYPE_CHECKING
 import time
 
-from loguru import logger
+from termcolor import cprint
 
 if TYPE_CHECKING:
     import lancedb as lancedb_type
@@ -237,7 +237,7 @@ class LanceDBVectorStore(BaseVectorStore):
                 pa.field("metadata_json", pa.string()),
             ])
             table = db.create_table(table_name, schema=schema)
-            logger.info(f"创建向量表: {table_name}")
+            cprint(f"创建向量表: {table_name}", "white")
 
         self._tables[table_name] = table
         return table
@@ -265,7 +265,7 @@ class LanceDBVectorStore(BaseVectorStore):
         # 生成嵌入向量
         vectors = self._embedder.embed([content])
         if not vectors:
-            logger.warning(f"无法生成嵌入向量: {memory_id}")
+            cprint(f"无法生成嵌入向量: {memory_id}", "yellow")
             return
 
         # 准备数据
@@ -294,7 +294,7 @@ class LanceDBVectorStore(BaseVectorStore):
 
         # 添加新记录
         table.add(data)
-        logger.debug(f"添加向量记忆: {memory_id}, strategy={strategy_id}")
+        cprint(f"添加向量记忆: {memory_id}, strategy={strategy_id}", "magenta")
 
     def search(
         self,
@@ -388,7 +388,7 @@ class LanceDBVectorStore(BaseVectorStore):
 
         table = self._get_or_create_table(strategy_id)
         table.delete(f"memory_id = '{memory_id}'")
-        logger.debug(f"删除向量记忆: {memory_id}")
+        cprint(f"删除向量记忆: {memory_id}", "magenta")
 
     def clear_strategy(self, strategy_id: str) -> None:
         """清空策略的所有记忆。"""
@@ -398,7 +398,7 @@ class LanceDBVectorStore(BaseVectorStore):
         if table_name in db.table_names():
             db.drop_table(table_name)
             self._tables.pop(table_name, None)
-            logger.info(f"清空向量表: {table_name}")
+            cprint(f"清空向量表: {table_name}", "white")
 
     def get_stats(self, strategy_id: str) -> Dict[str, Any]:
         """获取策略的向量存储统计。"""
@@ -540,5 +540,5 @@ def create_vector_store(
         return LanceDBVectorStore(embedder, config)
     else:
         if use_lancedb and not LANCEDB_AVAILABLE:
-            logger.warning("LanceDB 不可用，使用内存向量存储")
+            cprint("LanceDB 不可用，使用内存向量存储", "yellow")
         return InMemoryVectorStore(embedder)

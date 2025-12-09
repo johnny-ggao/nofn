@@ -3,7 +3,7 @@
 from typing import Dict, List, Optional, Tuple
 
 import ccxt.pro as ccxtpro
-from loguru import logger
+from termcolor import cprint
 
 from .constants import (
     FEATURE_GROUP_BY_KEY,
@@ -21,7 +21,7 @@ async def fetch_free_cash_from_gateway(
     Returns aggregated free cash as float. Returns 0.0 on error or when
     balance shape cannot be parsed.
     """
-    logger.info("Fetching exchange balance for LIVE trading mode")
+    cprint("Fetching exchange balance for LIVE trading mode", "white")
     try:
         if not hasattr(execution_gateway, "fetch_balance"):
             return 0.0, 0.0
@@ -29,7 +29,7 @@ async def fetch_free_cash_from_gateway(
     except Exception:
         return 0.0, 0.0
 
-    logger.info(f"Raw balance response: {balance}")
+    cprint(f"Raw balance response: {balance}", "white")
     free_map: Dict[str, float] = {}
     try:
         free_section = balance.get("free") if isinstance(balance, dict) else None
@@ -47,7 +47,7 @@ async def fetch_free_cash_from_gateway(
                 except Exception:
                     continue
 
-    logger.info(f"Parsed free balance map: {free_map}")
+    cprint(f"Parsed free balance map: {free_map}", "white")
     quotes: List[str] = []
     for sym in symbols or []:
         s = str(sym).upper()
@@ -57,7 +57,7 @@ async def fetch_free_cash_from_gateway(
             quotes.append(s.split("-")[1])
 
     quotes = list(dict.fromkeys(quotes))
-    logger.info(f"Quote currencies from symbols: {quotes}")
+    cprint(f"Quote currencies from symbols: {quotes}", "white")
 
     free_cash = 0.0
     total_cash = 0.0
@@ -79,8 +79,9 @@ async def fetch_free_cash_from_gateway(
             else:
                 total_cash += float(free_map.get(q, 0.0) or 0.0)
 
-    logger.debug(
-        f"Synced balance from exchange: free_cash={free_cash}, total_cash={total_cash}, quotes={quotes}"
+    cprint(
+        f"Synced balance from exchange: free_cash={free_cash}, total_cash={total_cash}, quotes={quotes}",
+        "white"
     )
 
     return float(free_cash), float(total_cash)
@@ -137,7 +138,7 @@ def extract_price_map(features: List[FeatureVector]) -> Dict[str, float]:
         try:
             price_map[symbol] = float(price)
         except (TypeError, ValueError):
-            logger.warning("Failed to parse feature price for {}", symbol)
+            cprint(f"Failed to parse feature price for {symbol}", "yellow")
 
     return price_map
 
