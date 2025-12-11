@@ -2,7 +2,7 @@
 
 This module provides the DefaultFeaturesPipeline which:
 1. Fetches OHLCV candle data via CCXT
-2. Computes technical indicators (EMA, MACD, RSI, Bollinger Bands)
+2. Computes technical indicators (EMA, MACD, RSI, Bollinger Bands, ATR, ADX)
 3. Fetches market snapshots (ticker, funding rate, open interest)
 4. Combines all features for LLM decision-making
 """
@@ -10,6 +10,7 @@ This module provides the DefaultFeaturesPipeline which:
 from __future__ import annotations
 
 import asyncio
+import itertools
 from typing import List, Optional
 
 from termcolor import cprint
@@ -31,7 +32,7 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
     """Default pipeline that fetches market data and computes technical indicators.
 
     Produces:
-    - Candle-based features: EMA, MACD, RSI, Bollinger Bands
+    - Candle-based features: EMA, MACD, RSI, Bollinger Bands, ATR, ADX
     - Market snapshot features: price, funding rate, open interest
     """
 
@@ -60,11 +61,9 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         self._symbols = list(dict.fromkeys(request.trading_config.symbols))
 
         # Default candle configurations
-        # Binance 合约支持: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d, 3d, 1w, 1M
-        # 注: 1s 仅现货支持，合约不支持
         self._candle_configurations = candle_configurations or [
-            CandleConfig(interval="1m", lookback=60 * 3),      # 1 hour of 1m candles
-            CandleConfig(interval="15m", lookback=60 * 4),     # 4 hours of 15m candles
+            CandleConfig(interval="3m", lookback=60 * 3),
+            CandleConfig(interval="4h", lookback=60 * 4),
         ]
 
     @classmethod
@@ -97,6 +96,7 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
             candles = await self._market_data_source.get_recent_candles(
                 self._symbols, interval, lookback
             )
+            cprint(f"candles count: {len(candles)}", "white")
             return self._candle_feature_computer.compute_features(candles=candles)
 
         async def _fetch_market_features() -> List[FeatureVector]:
@@ -115,7 +115,7 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
             "white"
         )
 
-        # Build concurrent tasks
+        # Build concurrent tasks: [candle_task_1, candle_task_2, ..., market_task]
         tasks = [
             _fetch_candles(config.interval, config.lookback)
             for config in self._candle_configurations
@@ -123,28 +123,24 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         tasks.append(_fetch_market_features())
 
         # Execute concurrently
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # results = [ [candle_features_1], [candle_features_2], ..., [market_features] ]
+        results = await asyncio.gather(*tasks)
         cprint("Concurrent data fetching complete.", "white")
 
-        # Process results, handling any exceptions
-        all_features: List[FeatureVector] = []
+        # Extract market features (last item)
+        market_features: List[FeatureVector] = results.pop()
 
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                if i < len(self._candle_configurations):
-                    config = self._candle_configurations[i]
-                    cprint(
-                        f"Failed to fetch candles for {config.interval}: {result}",
-                        "yellow"
-                    )
-                else:
-                    cprint(f"Failed to fetch market snapshot: {result}", "yellow")
-                continue
+        # Flatten the list of lists of candle features
+        candle_features: List[FeatureVector] = list(
+            itertools.chain.from_iterable(results)
+        )
 
-            if isinstance(result, list):
-                all_features.extend(result)
+        # Combine all features
+        candle_features.extend(market_features)
 
-        return FeaturesPipelineResult(features=all_features)
+        cprint(f"candle_features count: {len(candle_features)}", "white")
+
+        return FeaturesPipelineResult(features=candle_features)
 
     async def close(self) -> None:
         """Close any open connections."""

@@ -49,6 +49,12 @@ SYSTEM_PROMPT: str = """
   "rationale": "整体决策理由"
 }
 
+**重要**：confidence 字段对所有 action 类型都是必需的，包括 noop。
+- 对于 open_long/open_short：confidence 表示开仓信号的强度（0.0-1.0）
+- 对于 close_long/close_short：confidence 表示平仓决策的确信程度（0.0-1.0）
+- 对于 noop：confidence 表示不操作决策的确信度（通常 0.3-0.7，表示市场信号不明确或不满足入场条件）
+- 切勿省略 confidence 字段，即使是 noop 操作也必须提供
+
 止损止盈字段
 - sl_price（止损价）：开仓时必须设置。多单 sl_price < 入场价，空单 sl_price > 入场价。建议幅度 1.5%-3%
 - tp_price（止盈价）：可选。多单 tp_price > 入场价，空单 tp_price < 入场价
@@ -68,6 +74,27 @@ Context 包含 features.market_snapshot：每个周期从交易所快照提取�
 - funding.rate、funding.mark_price：永续合约的资金费率上下文
 
 将这些指标作为当前决策周期的权威数据。如果某项缺失，视为数据不可用，不要自行推断。
+
+历史行情与指标
+Context 中的 features 包含多时间框架的历史数据（按时间排序，最后一个是最新的）：
+
+K 线历史 (ohlcv_history)：
+- 包含最近 N 根 K 线的 OHLCV 数据
+- 格式：[{"ts": 时间戳, "o": 开盘价, "h": 最高价, "l": 最低价, "c": 收盘价, "v": 成交量}, ...]
+- 用于识别价格形态（如双底、头肩顶）、支撑阻力位、突破确认
+
+指标历史序列：
+- ema_12_history、ema_26_history、ema_50_history：EMA 历史值，用于判断趋势方向和金叉死叉
+- macd_history、macd_signal_history、macd_histogram_history：MACD 历史值，用于判断动能变化
+- rsi_history：RSI 历史值，用于判断超买超卖和背离
+
+分析技巧：
+- 对比 ohlcv_history 中的高低点，识别关键支撑阻力位
+- 观察 ema_12 与 ema_26 的交叉趋势（金叉看涨，死叉看跌）
+- 检查 macd_histogram 的变化方向（柱状图收缩可能预示趋势反转）
+- RSI 从超卖区（<30）回升或从超买区（>70）回落是重要信号
+- 价格创新高但 RSI 未创新高可能形成顶背离（看跌）
+- 价格创新低但 RSI 未创新低可能形成底背离（看涨）
 
 上下文摘要
 summary 对象包含用于决定仓位和风险的关键组合字段：

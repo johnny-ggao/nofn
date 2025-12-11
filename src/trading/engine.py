@@ -2,16 +2,20 @@
 
 提供策略运行时和决策协调器:
 - StrategyRuntime: 策略运行时容器
-- DecisionCoordinator: 决策协调器
+- DecisionCoordinator: 决策协调器（基于 LangGraph）
 - create_strategy_runtime: 工厂函数
+
+记忆管理：
+- 短期记忆由 LangGraph State + Checkpointer 自动管理
+- 无需手动维护 ShortTermMemory
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, List, Optional
 import uuid
 
 from termcolor import cprint
@@ -21,7 +25,7 @@ from .decision import BaseComposer, LlmComposer
 from .execution import BaseExecutionGateway, create_execution_gateway
 from .market import BaseFeaturesPipeline, DefaultFeaturesPipeline
 from .history import BaseDigestBuilder, BaseHistoryRecorder, InMemoryHistoryRecorder, RollingDigestBuilder
-from .memory import ShortTermMemory
+from .graph.coordinator import GraphDecisionCoordinator, GraphCoordinatorConfig
 from .models import (
     ComposeContext,
     Constraints,
@@ -76,585 +80,9 @@ class DecisionCoordinator(ABC):
         raise NotImplementedError
 
 
-class DefaultDecisionCoordinator(DecisionCoordinator):
-    """默认决策协调器实现。
-
-    协调完整的决策流程:
-    1. 获取仓位视图
-    2. 拉取数据并计算特征
-    3. 构建决策上下文
-    4. 执行决策(LLM + 风控) -> 交易指令
-    5. 执行指令
-    6. 记录检查点并更新摘要
-    7. 持久化交易和持仓数据
-    """
-
-    def __init__(
-        self,
-        *,
-        request: UserRequest,
-        strategy_id: str,
-        portfolio_service: BasePortfolioService,
-        features_pipeline: BaseFeaturesPipeline,
-        composer: BaseComposer,
-        execution_gateway: BaseExecutionGateway,
-        history_recorder: BaseHistoryRecorder,
-        digest_builder: BaseDigestBuilder,
-        persistence_service: Optional[PersistenceService] = None,
-        short_term_memory: Optional[ShortTermMemory] = None,
-    ) -> None:
-        self._request = request
-        self.strategy_id = strategy_id
-        self.portfolio_service = portfolio_service
-        self._features_pipeline = features_pipeline
-        self._composer = composer
-        self._execution_gateway = execution_gateway
-        self._history_recorder = history_recorder
-        self._digest_builder = digest_builder
-        self._persistence_service = persistence_service
-        self._short_term_memory = short_term_memory or ShortTermMemory(max_records=10)
-        self._symbols = list(dict.fromkeys(request.trading_config.symbols))
-        self._realized_pnl: float = 0.0
-        self._unrealized_pnl: float = 0.0
-        self.cycle_index: int = 0
-        self._strategy_name = request.trading_config.strategy_name or strategy_id
-
-    async def run_once(self) -> DecisionCycleResult:
-        """执行一个决策周期。"""
-        timestamp_ms = get_current_timestamp_ms()
-        compose_id = generate_uuid("compose")
-
-        # 获取仓位视图
-        portfolio = self.portfolio_service.get_view()
-
-        # LIVE 模式: 从交易所同步资金
-        try:
-            if self._request.exchange_config.trading_mode == TradingMode.LIVE:
-                balance = await self._execution_gateway.fetch_balance()
-                free = balance.get("free", {})
-                total = balance.get("total", {})
-
-                # 根据配置的 settle_coin 查询余额，支持 USDT/USDC/USD 等
-                settle_coin = self._request.exchange_config.settle_coin
-                # 按优先级查询：配置的 settle_coin -> 备选货币
-                quote_priority = [settle_coin]
-                if settle_coin == "USDT":
-                    quote_priority.extend(["USD", "BUSD"])
-                elif settle_coin == "USDC":
-                    quote_priority.extend(["USD"])
-                elif settle_coin == "USD":
-                    quote_priority.extend(["USDT", "USDC"])
-
-                free_cash = 0.0
-                total_cash = 0.0
-                found_ccy = None
-                for ccy in quote_priority:
-                    if ccy in free and float(free.get(ccy, 0) or 0) > 0:
-                        free_cash = float(free[ccy] or 0.0)
-                        total_cash = float(total.get(ccy, 0.0) or 0.0)
-                        found_ccy = ccy
-                        break
-
-                if found_ccy:
-                    cprint(f"同步 {found_ccy} 余额: free={free_cash}, total={total_cash}", "white")
-
-                if self._request.exchange_config.market_type == MarketType.SPOT:
-                    portfolio.account_balance = float(free_cash)
-                    portfolio.buying_power = max(0.0, float(portfolio.account_balance))
-                    # 同步到 portfolio service 内部状态
-                    self.portfolio_service.set_balance(float(free_cash))
-                else:
-                    portfolio.account_balance = float(total_cash)
-                    portfolio.buying_power = float(free_cash)
-                    portfolio.free_cash = float(free_cash)
-                    # 同步到 portfolio service 内部状态
-                    self.portfolio_service.set_balance(float(total_cash))
-
-                # 同步持仓（衍生品模式）
-                if self._request.exchange_config.market_type in (MarketType.SWAP, MarketType.FUTURE):
-                    try:
-                        symbols = self._request.trading_config.symbols
-                        exchange_positions = await self._execution_gateway.fetch_positions(symbols)
-                        self.portfolio_service.sync_positions(exchange_positions)
-                        # 重新获取更新后的视图
-                        portfolio = self.portfolio_service.get_view()
-                    except Exception as e:
-                        cprint(f"无法从交易所同步持仓: {e}", "yellow")
-        except Exception:
-            cprint("无法从交易所同步余额，使用缓存视图", "yellow")
-
-        # VIRTUAL 模式: 现货只能用可用资金
-        if self._request.exchange_config.trading_mode == TradingMode.VIRTUAL:
-            if self._request.exchange_config.market_type == MarketType.SPOT:
-                portfolio.buying_power = max(0.0, float(portfolio.account_balance))
-
-        # 构建特征
-        pipeline_result = await self._features_pipeline.build()
-        features = list(pipeline_result.features or [])
-        market_features = self._extract_market_features(features)
-
-        # 构建摘要
-        digest = self._digest_builder.build(self._history_recorder.get_records())
-
-        # 获取短期记忆（最近决策历史）
-        recent_decisions = [
-            r.to_dict() for r in self._short_term_memory.get_recent(5)
-        ]
-        pending_signals = self._short_term_memory.get_all_pending_signals()
-
-        # 构建决策上下文（包含历史记忆）
-        context = ComposeContext(
-            ts=timestamp_ms,
-            compose_id=compose_id,
-            strategy_id=self.strategy_id,
-            features=features,
-            portfolio=portfolio,
-            digest=digest,
-            recent_decisions=recent_decisions,
-            pending_signals=pending_signals,
-        )
-
-        # 执行决策
-        compose_result = await self._composer.compose(context)
-        instructions = compose_result.instructions
-        rationale = compose_result.rationale
-        cprint(f"决策器返回 {len(instructions)} 条指令", "white")
-
-        # 执行指令
-        cprint(f"执行 {len(instructions)} 条指令", "white")
-        tx_results = await self._execution_gateway.execute(
-            instructions, market_features=market_features
-        )
-        cprint(f"执行网关返回 {len(tx_results)} 个结果", "white")
-
-        # 过滤失败的指令
-        failed_ids = set()
-        failure_msgs = []
-        for tx in tx_results:
-            if tx.status in (TxStatus.REJECTED, TxStatus.ERROR):
-                failed_ids.add(tx.instruction_id)
-                reason = tx.reason or "未知错误"
-                msg = f"跳过 {tx.instrument.symbol} {tx.side.value}: {reason}"
-                failure_msgs.append(msg)
-                cprint(f"订单被拒: {msg}", "yellow")
-
-        if failure_msgs:
-            prefix = "\n\n**执行警告:**\n"
-            rationale = (
-                (rationale or "")
-                + prefix
-                + "\n".join(f"- {msg}" for msg in failure_msgs)
-            )
-
-        if failed_ids:
-            instructions = [
-                inst for inst in instructions if inst.instruction_id not in failed_ids
-            ]
-
-        # 从结果创建交易记录
-        trades = self._create_trades(tx_results, compose_id, timestamp_ms)
-
-        # 应用交易到仓位
-        self.portfolio_service.apply_trades(trades, market_features)
-
-        # 构建摘要
-        summary = self._build_summary(timestamp_ms, trades)
-
-        # 创建历史记录
-        history_records = self._create_history_records(
-            timestamp_ms, compose_id, features, instructions, trades, summary
-        )
-
-        for record in history_records:
-            self._history_recorder.record(record)
-
-        # 重建摘要
-        digest = self._digest_builder.build(self._history_recorder.get_records())
-        self.cycle_index += 1
-
-        portfolio = self.portfolio_service.get_view()
-
-        # 记录到短期记忆
-        self._short_term_memory.record_decision(
-            compose_id=compose_id,
-            cycle_index=self.cycle_index,
-            timestamp_ms=timestamp_ms,
-            instructions=instructions,
-            trades=trades,
-            rationale=rationale,
-        )
-
-        # 持久化交易和持仓数据
-        if self._persistence_service:
-            self._persist_cycle_data(trades, portfolio, timestamp_ms)
-
-        return DecisionCycleResult(
-            compose_id=compose_id,
-            timestamp_ms=timestamp_ms,
-            cycle_index=self.cycle_index,
-            rationale=rationale,
-            strategy_summary=summary,
-            instructions=instructions,
-            trades=trades,
-            history_records=history_records,
-            digest=digest,
-            portfolio_view=portfolio,
-        )
-
-    def _extract_market_features(
-        self, features: List[FeatureVector]
-    ) -> List[FeatureVector]:
-        """提取市场快照特征。"""
-        return [
-            f for f in features
-            if (f.meta or {}).get("source") == "market_snapshot"
-        ]
-
-    def _create_trades(
-        self,
-        tx_results: List[TxResult],
-        compose_id: str,
-        timestamp_ms: int,
-    ) -> List[TradeHistoryEntry]:
-        """从执行结果创建交易历史记录。"""
-        trades: List[TradeHistoryEntry] = []
-
-        # 获取当前持仓视图，用于计算平仓盈亏
-        portfolio = self.portfolio_service.get_view()
-
-        for tx in tx_results:
-            if tx.status in (TxStatus.ERROR, TxStatus.REJECTED):
-                continue
-
-            qty = float(tx.filled_qty or 0.0)
-            if qty == 0:
-                continue
-
-            price = float(tx.avg_exec_price or 0.0)
-            notional = (price * qty) if price and qty else None
-            fee = float(tx.fee_cost or 0.0)
-
-            # 计算 realized PnL
-            realized_pnl = -fee if fee else 0.0
-            symbol = tx.instrument.symbol
-            pos = portfolio.positions.get(symbol)
-
-            if pos and pos.avg_price and price > 0:
-                # 检查是否是平仓操作：
-                # - 卖出 (SELL) 且持有多头 (qty > 0) -> 平多
-                # - 买入 (BUY) 且持有空头 (qty < 0) -> 平空
-                if tx.side == TradeSide.SELL and pos.quantity > 0:
-                    # 平多: (卖出价 - 入场价) * 数量
-                    close_qty = min(qty, abs(pos.quantity))
-                    pnl = (price - pos.avg_price) * close_qty
-                    realized_pnl += pnl
-                    cprint(
-                        f"{symbol} 平多盈亏: ({price:.2f} - {pos.avg_price:.2f}) * {close_qty} = {pnl:.2f}",
-                        "green" if pnl >= 0 else "red"
-                    )
-                elif tx.side == TradeSide.BUY and pos.quantity < 0:
-                    # 平空: (入场价 - 买入价) * 数量
-                    close_qty = min(qty, abs(pos.quantity))
-                    pnl = (pos.avg_price - price) * close_qty
-                    realized_pnl += pnl
-                    cprint(
-                        f"{symbol} 平空盈亏: ({pos.avg_price:.2f} - {price:.2f}) * {close_qty} = {pnl:.2f}",
-                        "green" if pnl >= 0 else "red"
-                    )
-
-            trade = TradeHistoryEntry(
-                trade_id=generate_uuid("trade"),
-                compose_id=compose_id,
-                instruction_id=tx.instruction_id,
-                strategy_id=self.strategy_id,
-                instrument=tx.instrument,
-                side=tx.side,
-                type=TradeType.LONG if tx.side == TradeSide.BUY else TradeType.SHORT,
-                quantity=qty,
-                entry_price=price or None,
-                avg_exec_price=tx.avg_exec_price,
-                notional_entry=notional,
-                entry_ts=timestamp_ms,
-                trade_ts=timestamp_ms,
-                realized_pnl=realized_pnl if realized_pnl != 0 else None,
-                leverage=tx.leverage,
-                fee_cost=fee or None,
-            )
-            trades.append(trade)
-
-        return trades
-
-    def _build_summary(
-        self,
-        timestamp_ms: int,
-        trades: List[TradeHistoryEntry],
-    ) -> StrategySummary:
-        """构建周期后的策略摘要。"""
-        realized_delta = sum(trade.realized_pnl or 0.0 for trade in trades)
-        self._realized_pnl += realized_delta
-
-        try:
-            view = self.portfolio_service.get_view()
-            unrealized = float(view.total_unrealized_pnl or 0.0)
-            equity = float(view.total_value or 0.0)
-        except Exception:
-            unrealized = float(self._unrealized_pnl or 0.0)
-            equity = float(self._request.trading_config.initial_capital or 0.0)
-
-        self._unrealized_pnl = float(unrealized)
-
-        initial_capital = self._request.trading_config.initial_capital or 0.0
-        pnl_pct = (
-            (self._realized_pnl + self._unrealized_pnl) / initial_capital
-            if initial_capital
-            else None
-        )
-
-        unrealized_pnl_pct = (self._unrealized_pnl / equity * 100.0) if equity else None
-
-        return StrategySummary(
-            strategy_id=self.strategy_id,
-            name=self._strategy_name,
-            model_provider=self._request.llm_model_config.provider,
-            model_id=self._request.llm_model_config.model_id,
-            exchange_id=self._request.exchange_config.exchange_id,
-            mode=self._request.exchange_config.trading_mode,
-            status=StrategyStatus.RUNNING,
-            realized_pnl=self._realized_pnl,
-            unrealized_pnl=self._unrealized_pnl,
-            unrealized_pnl_pct=unrealized_pnl_pct,
-            pnl_pct=pnl_pct,
-            total_value=equity,
-            last_updated_ts=timestamp_ms,
-        )
-
-    def _create_history_records(
-        self,
-        timestamp_ms: int,
-        compose_id: str,
-        features: List[FeatureVector],
-        instructions: List[TradeInstruction],
-        trades: List[TradeHistoryEntry],
-        summary: StrategySummary,
-    ) -> List[HistoryRecord]:
-        """为本周期创建历史记录。"""
-        feature_payload = [v.model_dump(mode="json") for v in features]
-        instruction_payload = [i.model_dump(mode="json") for i in instructions]
-        trade_payload = [t.model_dump(mode="json") for t in trades]
-
-        return [
-            HistoryRecord(
-                ts=timestamp_ms,
-                kind="features",
-                reference_id=compose_id,
-                payload={"features": feature_payload},
-            ),
-            HistoryRecord(
-                ts=timestamp_ms,
-                kind="compose",
-                reference_id=compose_id,
-                payload={"summary": summary.model_dump(mode="json")},
-            ),
-            HistoryRecord(
-                ts=timestamp_ms,
-                kind="instructions",
-                reference_id=compose_id,
-                payload={"instructions": instruction_payload},
-            ),
-            HistoryRecord(
-                ts=timestamp_ms,
-                kind="execution",
-                reference_id=compose_id,
-                payload={"trades": trade_payload},
-            ),
-        ]
-
-    def _persist_memory(self) -> None:
-        """持久化短期记忆到数据库。"""
-        if not self._persistence_service:
-            return
-
-        try:
-            state = self._short_term_memory.to_state()
-            self._persistence_service.save_memory(
-                strategy_id=self.strategy_id,
-                decisions=state["decisions"],
-                pending_signals=state["pending_signals"],
-                cycle_index=self._short_term_memory.get_last_cycle_index(),
-            )
-        except Exception:
-            import traceback
-            cprint("持久化记忆失败", "red")
-            traceback.print_exc()
-
-    def _persist_cycle_data(
-        self,
-        trades: List[TradeHistoryEntry],
-        portfolio: Any,
-        timestamp_ms: int,
-    ) -> None:
-        """持久化决策周期数据到数据库。"""
-        if not self._persistence_service:
-            return
-
-        try:
-            # 持久化短期记忆
-            self._persist_memory()
-
-            # 持久化交易记录
-            if trades:
-                trade_data = []
-                for trade in trades:
-                    trade_data.append({
-                        "strategy_id": self.strategy_id,
-                        "trade_id": trade.trade_id,
-                        "compose_id": trade.compose_id,
-                        "instruction_id": trade.instruction_id,
-                        "symbol": trade.instrument.symbol,
-                        "trade_type": trade.type.value if trade.type else "LONG",
-                        "side": trade.side.value if trade.side else "BUY",
-                        "leverage": trade.leverage,
-                        "quantity": trade.quantity,
-                        "entry_price": trade.entry_price,
-                        "avg_exec_price": trade.avg_exec_price,
-                        "notional_entry": trade.notional_entry,
-                        "realized_pnl": trade.realized_pnl,
-                        "fee_cost": trade.fee_cost,
-                        "entry_time": datetime.fromtimestamp(
-                            timestamp_ms / 1000, tz=timezone.utc
-                        ) if timestamp_ms else None,
-                    })
-                self._persistence_service.save_trades_batch(trade_data)
-
-            # 持久化持仓快照
-            if portfolio and portfolio.positions:
-                holdings_data = []
-                snapshot_ts = datetime.fromtimestamp(
-                    timestamp_ms / 1000, tz=timezone.utc
-                )
-                for symbol, pos in portfolio.positions.items():
-                    qty = float(pos.quantity or 0)
-                    if qty == 0:
-                        continue
-                    holdings_data.append({
-                        "strategy_id": self.strategy_id,
-                        "symbol": symbol,
-                        "holding_type": "LONG" if qty > 0 else "SHORT",
-                        "quantity": abs(qty),
-                        "leverage": getattr(pos, "leverage", None),
-                        "entry_price": getattr(pos, "avg_entry_price", None),
-                        "unrealized_pnl": getattr(pos, "unrealized_pnl", None),
-                        "unrealized_pnl_pct": getattr(pos, "unrealized_pnl_pct", None),
-                        "snapshot_ts": snapshot_ts,
-                    })
-                if holdings_data:
-                    self._persistence_service.save_holdings_batch(holdings_data)
-
-        except Exception:
-            import traceback
-            cprint("持久化周期数据失败", "red")
-            traceback.print_exc()
-
-    async def close_all_positions(self) -> List[TradeHistoryEntry]:
-        """平掉所有持仓。"""
-        try:
-            cprint(f"正在平掉策略 {self.strategy_id} 的所有持仓", "white")
-
-            portfolio = self.portfolio_service.get_view()
-
-            if not portfolio.positions:
-                cprint("没有持仓需要平掉", "white")
-                return []
-
-            instructions = []
-            compose_id = generate_uuid("close_all")
-            timestamp_ms = get_current_timestamp_ms()
-
-            for symbol, pos in portfolio.positions.items():
-                quantity = float(pos.quantity)
-                if quantity == 0:
-                    continue
-
-                side = TradeSide.SELL if quantity > 0 else TradeSide.BUY
-                action = (
-                    TradeDecisionAction.CLOSE_LONG
-                    if quantity > 0
-                    else TradeDecisionAction.CLOSE_SHORT
-                )
-
-                inst = TradeInstruction(
-                    instruction_id=generate_uuid("inst"),
-                    compose_id=compose_id,
-                    instrument=pos.instrument,
-                    action=action,
-                    side=side,
-                    quantity=abs(quantity),
-                    price_mode=PriceMode.MARKET,
-                    meta={
-                        "rationale": "策略停止: 平掉所有持仓",
-                        "reduceOnly": True,
-                    },
-                )
-                instructions.append(inst)
-
-            if not instructions:
-                return []
-
-            cprint(f"执行 {len(instructions)} 条平仓指令", "white")
-
-            # 获取市场特征用于定价
-            market_features: List[FeatureVector] = []
-            if self._request.exchange_config.trading_mode == TradingMode.VIRTUAL:
-                try:
-                    pipeline_result = await self._features_pipeline.build()
-                    market_features = self._extract_market_features(
-                        pipeline_result.features or []
-                    )
-                except Exception:
-                    import traceback
-                    cprint("构建平仓市场特征失败", "red")
-                    traceback.print_exc()
-
-            # 执行
-            tx_results = await self._execution_gateway.execute(
-                instructions, market_features=market_features
-            )
-
-            # 创建交易记录
-            trades = self._create_trades(tx_results, compose_id, timestamp_ms)
-            self.portfolio_service.apply_trades(trades, market_features=[])
-
-            # 记录历史
-            for trade in trades:
-                self._history_recorder.record(
-                    HistoryRecord(
-                        ts=timestamp_ms,
-                        kind="execution",
-                        reference_id=compose_id,
-                        payload={"trades": [trade.model_dump(mode="json")]},
-                    )
-                )
-
-            cprint(f"成功平仓，生成 {len(trades)} 笔交易", "green")
-            return trades
-
-        except Exception:
-            import traceback
-            cprint(f"平仓失败: 策略 {self.strategy_id}", "red")
-            traceback.print_exc()
-            return []
-
-    async def close(self) -> None:
-        """释放资源。"""
-        # 关闭前保存记忆
-        self._persist_memory()
-
-        try:
-            close_fn = getattr(self._execution_gateway, "close", None)
-            if callable(close_fn):
-                await close_fn()
-        except Exception:
-            pass
+# DefaultDecisionCoordinator 已移除
+# 短期记忆现在由 LangGraph State + Checkpointer 自动管理
+# 详见 src/trading/graph/coordinator.py 中的 GraphDecisionCoordinator
 
 
 # =============================================================================
@@ -668,7 +96,7 @@ class StrategyRuntime:
 
     request: UserRequest
     strategy_id: str
-    coordinator: DefaultDecisionCoordinator
+    coordinator: GraphDecisionCoordinator  # 使用基于 LangGraph 的协调器
     history_recorder: Optional[InMemoryHistoryRecorder] = None
 
     async def run_cycle(self) -> DecisionCycleResult:
@@ -823,22 +251,8 @@ async def create_strategy_runtime(
         cprint(f"恢复历史交易记录失败: {strategy_id}", "yellow")
         traceback.print_exc()
 
-    # 尝试恢复短期记忆（如果是复用策略）
-    short_term_memory: Optional[ShortTermMemory] = None
-    if strategy_id_override:
-        try:
-            memory_state = persistence_service.load_memory(strategy_id)
-            if memory_state:
-                short_term_memory = ShortTermMemory.from_state(memory_state)
-                cprint(
-                    f"从数据库恢复策略记忆: {strategy_id}, "
-                    f"{len(short_term_memory)} 条决策记录",
-                    "white"
-                )
-        except Exception:
-            import traceback
-            cprint(f"恢复策略记忆失败: {strategy_id}", "red")
-            traceback.print_exc()
+    # 短期记忆现在由 LangGraph Checkpointer 自动管理
+    # 无需手动恢复 ShortTermMemory
 
     # 创建策略记录（新策略）
     if not strategy_id_override:
@@ -861,8 +275,14 @@ async def create_strategy_runtime(
             cprint("创建策略记录失败", "red")
             traceback.print_exc()
 
-    # 创建协调器
-    coordinator = DefaultDecisionCoordinator(
+    # 创建基于 LangGraph 的协调器
+    # 短期记忆由 LangGraph State + Checkpointer 自动管理
+    graph_config = GraphCoordinatorConfig(
+        checkpointer_db_path=f"data/langgraph_{strategy_id}.db",
+        enable_persistence=True,
+    )
+
+    coordinator = GraphDecisionCoordinator(
         request=request,
         strategy_id=strategy_id,
         portfolio_service=portfolio_service,
@@ -872,7 +292,7 @@ async def create_strategy_runtime(
         history_recorder=history_recorder,
         digest_builder=digest_builder,
         persistence_service=persistence_service,
-        short_term_memory=short_term_memory,
+        config=graph_config,
     )
 
     return StrategyRuntime(

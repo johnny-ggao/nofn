@@ -133,6 +133,7 @@ class GraphDecisionCoordinator:
         async def decide_callback(context: Dict[str, Any]) -> Dict[str, Any]:
             """决策回调：调用 LLM Composer。"""
             # 从 dict 重建 ComposeContext
+            # 这些字段由 state_to_compose_context() 从 TradingState 提取
             compose_context = ComposeContext(
                 ts=context["ts"],
                 compose_id=context["compose_id"],
@@ -142,6 +143,7 @@ class GraphDecisionCoordinator:
                 digest=context["digest"],
                 recent_decisions=context.get("recent_decisions", []),
                 pending_signals=context.get("pending_signals", {}),
+                history_summaries=context.get("history_summaries", []),
             )
 
             # 调用 composer
@@ -271,18 +273,52 @@ class GraphDecisionCoordinator:
                 balance = await self._execution_gateway.fetch_balance()
                 free = balance.get("free", {})
                 total = balance.get("total", {})
-                free_cash = float(free.get("USDT", 0.0) or free.get("USD", 0.0))
-                total_cash = float(total.get("USDT", 0.0) or total.get("USD", 0.0))
+
+                # 按优先级查找结算币余额
+                settle_coin = self._request.exchange_config.settle_coin or "USDT"
+                priority = [settle_coin]
+                if settle_coin == "USDT":
+                    priority.extend(["USD", "BUSD"])
+                elif settle_coin == "USDC":
+                    priority.extend(["USD"])
+                elif settle_coin == "USD":
+                    priority.extend(["USDT", "USDC"])
+
+                free_cash = 0.0
+                total_cash = 0.0
+                found_ccy = None
+                for ccy in priority:
+                    if ccy in free and float(free.get(ccy, 0) or 0) > 0:
+                        free_cash = float(free[ccy] or 0.0)
+                        total_cash = float(total.get(ccy, 0.0) or 0.0)
+                        found_ccy = ccy
+                        break
+
+                if found_ccy:
+                    cprint(f"同步 {found_ccy} 余额: free={free_cash}, total={total_cash}", "white")
 
                 if self._request.exchange_config.market_type == MarketType.SPOT:
                     portfolio.account_balance = float(free_cash)
                     portfolio.buying_power = max(0.0, float(portfolio.account_balance))
+                    self.portfolio_service.set_balance(free_cash)
                 else:
                     portfolio.account_balance = float(total_cash)
                     portfolio.buying_power = float(free_cash)
                     portfolio.free_cash = float(free_cash)
-        except Exception:
-            cprint("无法从交易所同步余额，使用缓存视图", "yellow")
+                    self.portfolio_service.set_balance(total_cash)
+
+                # 同步衍生品持仓
+                if self._request.exchange_config.market_type in (MarketType.SWAP, MarketType.FUTURE):
+                    try:
+                        positions = await self._execution_gateway.fetch_positions(
+                            self._request.trading_config.symbols
+                        )
+                        self.portfolio_service.sync_positions(positions)
+                        portfolio = self.portfolio_service.get_view()
+                    except Exception as e:
+                        cprint(f"无法从交易所同步持仓: {e}", "yellow")
+        except Exception as e:
+            cprint(f"无法从交易所同步余额: {e}，使用缓存视图", "yellow")
 
         # VIRTUAL 模式: 现货只能用可用资金
         if self._request.exchange_config.trading_mode == TradingMode.VIRTUAL:

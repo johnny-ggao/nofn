@@ -1,191 +1,169 @@
 # CLAUDE.md
 
-此文件为 Claude Code (claude.ai/code) 在此代码库中工作时提供指导。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 项目概述
 
-**nofn** 是一个基于 LangChain 构建的交易智能体系统，能够通过 LLM 驱动执行加密货币交易操作。该系统使用 Hansen 策略进行自主量化交易，通过 CCXT 在多个交易所执行交易操作（开仓/平仓、设置止盈止损）。
+**NOFN** 是一个基于 LLM 的智能量化交易系统，采用模块化架构设计。通过 CCXT 支持多个交易所（Binance、OKX、Bybit、Gate、KuCoin、MEXC、Bitget、Hyperliquid），使用 LangChain/LangGraph 进行 LLM 决策。
 
 ### 核心技术栈
-- **LangChain**: LLM 集成框架，用于管理交易工作流和决策
-- **CCXT**: 统一的加密货币交易所 API（初期接入 Hyperliquid，设计上支持 Binance、OKX 等）
-- **Python 3.12+**: 运行时环境
-- **uv**: 包管理器和虚拟环境工具
+- **Python 3.12+** + **uv** 包管理
+- **LangChain/LangGraph**: LLM 集成与工作流编排
+- **CCXT**: 统一交易所 API
+- **SQLAlchemy + SQLite**: 状态持久化
+- **LanceDB**: 向量存储（长期记忆）
+- **Pydantic**: 数据模型验证
 
-## 开发环境
-
-### 包管理
-本项目使用 `uv` 进行依赖管理。常用命令：
+## 常用命令
 
 ```bash
 # 安装依赖
 uv sync
 
-# 添加新依赖
-uv add <package-name>
+# 运行主程序
+uv run python main.py
 
-# 添加开发依赖
-uv add --dev <package-name>
+# 运行测试
+uv run pytest tests/ -v
 
-# 运行 Python 脚本
-uv run python <script.py>
+# 运行单个测试文件
+uv run pytest tests/test_new_architecture.py -v
 
-# 手动激活虚拟环境
-source .venv/bin/activate  # macOS/Linux
+# 类型检查
+uv run mypy src/
+
+# 代码格式化
+uv run black src/ tests/
+uv run ruff check src/ tests/
 ```
-
-### 核心依赖
-项目启动时需要安装：
-- `langchain` 和 `langchain-core` - LLM 集成和工作流
-- `langchain-openai` 和 `langchain-anthropic` - LLM 提供商集成
-- `ccxt` - 交易所连接
-- `python-dotenv` - 环境变量管理（用于 API 密钥）
-- `numpy` - 技术指标计算
 
 ## 架构设计
 
-### 高层架构
-
-系统采用**线性工作流架构**，基于 Hansen 策略执行以下步骤：
-
-1. **市场数据获取 (fetch_market_data)**: 并行获取账户余额、持仓和多时间框架K线数据
-2. **市场分析 (analyze_market)**: 计算技术指标（EMA、MACD、RSI、ATR、布林带、OBV等）
-3. **信号生成 (generate_signals)**: 使用 LangChain Chain（prompt | llm）让 LLM 分析市场并生成交易信号
-4. **风险评估 (assess_risk)**: 评估交易信号的风险（置信度、回撤、仓位限制等）
-5. **交易执行 (execute_trades)**: 通过 CCXT 执行通过风控的交易
-6. **持仓监控 (monitor_positions)**: 监控活跃持仓的盈亏和止盈止损
-7. **策略优化 (update_strategy)**: 清理临时数据并根据绩效优化策略参数
-
-### 状态管理
-
-系统使用 **JSON 文件持久化**状态，包含：
-- `session_id`: 会话标识
-- `market_data`: 市场数据（余额、持仓、K线）
-- `technical_indicators`: 各时间框架的技术指标
-- `trading_signals`: LLM 生成的交易信号列表
-- `risk_assessment`: 风险评估结果（approved/rejected/adjustable）
-- `execution_results`: 交易执行结果
-- `active_positions`: 活跃持仓列表
-- `error_log`: 错误日志
-
-### 交易所适配器模式
-
-每个交易所适配器应实现统一接口：
-
-```python
-class BaseExchangeAdapter(ABC):
-    @abstractmethod
-    async def open_position(self, symbol, side, amount, params): ...
-    @abstractmethod
-    async def close_position(self, symbol, position_id, params): ...
-    @abstractmethod
-    async def set_stop_loss_take_profit(self, symbol, position_id, sl, tp): ...
-    @abstractmethod
-    async def get_positions(self, symbol=None): ...
-```
-
-这确保了添加新交易所时无需修改核心工作流逻辑。
-
-### 配置策略
-
-使用配置驱动的方式选择交易所：
-- 使用环境变量存储 API 凭证（`.env` 文件，永不提交到版本控制）
-- 配置文件（`config.yaml` 或类似）存储交易所偏好和默认参数
-- 运行时根据用户提示词或配置选择交易所
-
-### LLM 集成要点
-
-LLM 应提取以下信息：
-- **动作类型**: open_long, open_short, close_position, modify_sl_tp, cancel_order
-- **交易对**: 标准格式的交易对
-- **数量**: 仓位大小（含单位 - 合约数、美元价值等）
-- **订单类型**: market（市价）, limit（限价）
-- **价格**: 用于限价单
-- **止损**: 价格水平或百分比
-- **止盈**: 价格水平或百分比
-- **杠杆**: 如适用
-
-使用结构化输出（JSON 模式或函数调用）确保可靠解析。
-
-### 错误处理策略
-
-实现全面的错误处理：
-- LLM 提取失败 → 请求用户澄清
-- 交易所 API 错误 → 返回用户友好的错误消息和建议
-- 网络/超时错误 → 实现指数退避的重试逻辑
-- 余额不足 → 执行前警告用户
-- 无效参数 → 发送到交易所前进行验证
-
-### 安全考虑
-
-- **永不提交 API 密钥**: 使用 `.env` 存储凭证，添加到 `.gitignore`
-- **验证所有 LLM 输出**: 永不直接信任 LLM 输出用于交易操作
-- **实现确认流程**: 对于大额订单或高风险操作，要求用户明确确认
-- **速率限制**: 遵守交易所 API 速率限制
-- **模拟交易模式**: 实现测试模式，无需真实资金
-
-## 推荐项目结构
+### 核心流程
 
 ```
-nofn/
-├── src/
-│   ├── agents/          # 交易智能体实现
-│   │   └── hansen/      # Hansen 策略智能体
-│   │       ├── agent.py             # 主智能体（简化版，JSON 状态）
-│   │       ├── langchain_agent.py   # LangChain 标准实现
-│   │       ├── market_analyzer.py   # 市场分析
-│   │       ├── trading_executor.py  # 交易执行
-│   │       └── ...
-│   ├── adapters/        # 交易所适配器实现
-│   │   ├── base.py              # 基础接口
-│   │   └── hyperliquid.py       # Hyperliquid 实现
-│   ├── models/          # Pydantic 模型
-│   │   └── strategy.py          # 策略相关模型
-│   ├── prompts/         # LLM 提示词模板
-│   │   └── hansen.txt           # Hansen 策略提示词
-│   └── utils/           # 辅助函数
-│       ├── indicators.py        # 技术指标计算
-│       ├── config.py            # 配置管理
-│       └── context_manager.py   # 交易上下文管理
-├── config/              # 配置文件
-│   └── config.yaml
-├── .env                 # 环境变量（不提交）
-├── main.py              # 统一入口点
-└── pyproject.toml       # 项目元数据和依赖
+StrategyAgent (src/strategy/agent.py)
+    │
+    ├── StrategyRuntime (src/trading/engine.py)
+    │       │
+    │       └── GraphDecisionCoordinator (基于 LangGraph)
+    │               │
+    │               ├── 1. 同步仓位 (portfolio_service)
+    │               ├── 2. 构建特征 (features_pipeline)
+    │               ├── 3. LangGraph 工作流:
+    │               │       reflect → decide → execute → record → summarize
+    │               ├── 4. 状态自动持久化 (SqliteSaver checkpointer)
+    │               └── 5. 短期记忆由 LangGraph State 自动管理
+    │
+    └── 循环运行 (decide_interval 秒)
 ```
 
-## 测试方法
+### 模块职责
 
-- 使用 `pytest` 进行单元测试和集成测试
-- 单元测试中 Mock CCXT 交易所调用
-- 集成测试使用 CCXT 沙箱/测试网环境
-- 使用测试模式验证工作流（`main.py test`）
-- 使用各种市场条件验证 LLM 输出解析
+| 模块路径 | 职责 |
+|---------|------|
+| `src/strategy/agent.py` | 策略代理，编排交易循环，支持反思模式 |
+| `src/trading/engine.py` | 交易引擎：`StrategyRuntime` + `DecisionCoordinator` |
+| `src/trading/market/` | 市场数据获取与特征计算（K线、MTF指标） |
+| `src/trading/decision/` | LLM 决策器：`LlmComposer`、系统提示词 |
+| `src/trading/execution/` | 订单执行：`ccxt_trading.py`（实盘）、`paper_trading.py`（模拟） |
+| `src/trading/portfolio/` | 仓位与资金管理 |
+| `src/trading/history/` | 交易历史与摘要（Digest） |
+| `src/trading/reflection/` | 反思分析与策略调整 |
+| `src/trading/graph/` | LangGraph 工作流、状态管理、记忆层（短期+长期） |
+| `src/trading/db/` | SQLAlchemy 持久化层 |
+| `src/trading/templates/` | 策略提示词模板 |
 
-## 核心实现要点
+### 关键数据流
 
-1. **依赖管理**: 使用 uv 管理项目依赖（langchain, ccxt, numpy等）
-2. **交易所适配器**: 基于 CCXT 实现统一的交易所接口
-3. **Hansen 策略**: 实现基于夏普比率最大化的交易策略
-4. **LangChain 集成**: 使用 ChatPromptTemplate 和 Chain（prompt | llm）进行 LLM 决策
-5. **状态持久化**: 使用 JSON 文件保存和恢复交易状态
-6. **技术分析**: 实现多时间框架（1m/15m/1h/4h）的技术指标计算
-7. **风险管理**: 实现严格的风控检查（夏普比率、置信度、仓位限制）
-8. **错误处理**: 实现指数退避的重试机制和详细错误日志
-9. **配置管理**: 使用 YAML 和环境变量管理配置
-10. **Docker 部署**: 支持跨平台 Docker 镜像构建和 AWS ECR 部署
+1. **特征管道** (`market/pipeline.py`):
+   - `DataSourceFeatureComputer` → 从交易所获取 K 线
+   - `CandleBasedFeatureComputer` → 计算技术指标（EMA、MACD、RSI、ADX、ATR、BB、OBV）
+   - `MarketSnapshotComputer` → 实时行情快照
 
-## 运行模式
+2. **决策器** (`decision/llm_composer.py`):
+   - 构建系统提示词（含策略模板 + 特征 + 仓位 + 历史摘要）
+   - 调用 LLM 生成 `TradeInstruction[]`
+   - 支持多 LLM 提供商：OpenAI、OpenRouter、DeepSeek、Anthropic、DashScope
 
-系统支持三种运行模式：
+3. **执行网关** (`execution/`):
+   - `CcxtExecutionGateway`: 实盘交易（支持市价单、止盈止损）
+   - `PaperTradingGateway`: 模拟交易
 
-1. **策略模式** (`main.py strategy`): 自主循环运行，每 3 分钟执行完整工作流
-2. **测试模式** (`main.py test`): 单次迭代测试，查看完整分析，不执行交易
-3. **交互模式** (`main.py interactive`): 通过自然语言手动交易
+### 配置系统
 
-## Hansen 策略核心
+采用 **YAML + 环境变量** 混合配置：
+- `config/config.yaml`: 交易所、策略、LLM 等配置
+- `.env`: API 密钥等敏感信息
 
-- **目标**: 最大化夏普比率（Sharpe Ratio = 平均收益 / 收益波动率）
-- **质量优于数量**: 只在高质量信号时交易（信号强度 >= 80/100）
-- **严格风控**: 止损强制要求，风险回报比 >= 1:3
-- **自适应管理**: 根据夏普比率动态调整策略激进程度
+配置加载入口：`src/config.py` → `Settings` 类
+
+### 策略模板
+
+位于 `src/trading/templates/`：
+- `default.txt`: 稳健顺势（置信度 > 0.7）
+- `aggressive.txt`: 激进动量（置信度 > 0.6）
+- `insane.txt`: 极端激进（置信度 > 0.5）
+- `funding_rate.txt`: 资金费率套利
+- `nof1.txt`: 自定义策略
+
+### 技术指标（MTF 多时间框架）
+
+**1H 周期**: EMA(7,21,55), MACD(6,13,5), RSI(14), ADX(14), ATR(14), BB(20,2)
+**15M 周期**: EMA(8,21,50), MACD(6,13,5), RSI(14), Stochastic(14,3,3), Volume ROC
+**5M 周期**: EMA(8), RSI(9), MACD(5,10,3), Volume MA
+
+### 反思模式
+
+启用后（`enable_reflection=True`）：
+- 分析历史表现（夏普比、胜率、回撤）
+- 识别问题模式（过度交易、连续亏损）
+- 动态调整置信度阈值
+- 严重问题时触发冷静期
+
+## 数据模型
+
+核心模型定义在 `src/trading/models.py`：
+- `UserRequest`: 用户请求（LLM配置 + 交易所配置 + 交易配置）
+- `TradeInstruction`: 交易指令
+- `TradeHistoryEntry`: 交易记录
+- `FeatureVector`: 特征向量
+- `ComposeContext`: 决策上下文
+- `DecisionCycleResult`: 决策周期结果
+
+## 数据库模型
+
+位于 `src/trading/db/models/`：
+- `StrategyModel`: 策略记录
+- `StrategyDetailModel`: 策略详情/交易记录
+- `StrategyHoldingModel`: 持仓快照
+
+## 记忆管理（LangGraph 原生）
+
+短期记忆现在由 **LangGraph State + Checkpointer** 自动管理，无需手动维护。
+
+### 记忆层次
+
+| 层级 | 存储 | 管理方式 |
+|-----|------|---------|
+| 短期记忆 | `TradingState.memories` | LangGraph State reducer 自动合并，保留最近 10 条 |
+| 中期摘要 | `TradingState.summaries` | 当 memories 满时自动压缩，保留最近 5 个摘要 |
+| 长期记忆 | LangGraph Store + LanceDB | 跨会话持久化，支持向量搜索 |
+
+### 核心类型
+
+定义在 `src/trading/graph/state.py`：
+- `TradingState`: LangGraph 状态（含 memories、summaries、pending_signals）
+- `DecisionMemory`: 单条决策记忆
+- `DecisionSummary`: 压缩的历史摘要
+
+### Checkpointer 配置
+
+每个策略有独立的 SQLite checkpoint 文件：
+```
+data/langgraph_{strategy_id}.db
+```
+
+状态恢复：
+- 策略重启时自动从 checkpoint 恢复
+- `thread_id` = `strategy_id`

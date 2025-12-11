@@ -1,13 +1,14 @@
-"""Trading components - models, execution, decision, portfolio, database, memory, graph."""
+"""Trading components - models, execution, decision, portfolio, database, memory, graph.
+
+记忆管理说明：
+- 短期记忆由 LangGraph State + Checkpointer 自动管理
+- DecisionMemory (graph/state.py) 替代了 ShortTermMemory
+- 旧的 ShortTermMemory 类仍可用于兼容性，但不推荐使用
+"""
 
 from .db import (
     PersistenceService,
     get_persistence_service,
-)
-from .memory import (
-    ShortTermMemory,
-    DecisionRecord,
-    MemoryFormatter,
 )
 from .graph import (
     GraphDecisionCoordinator,
@@ -57,11 +58,7 @@ __all__ = [
     # Database
     "PersistenceService",
     "get_persistence_service",
-    # Memory
-    "ShortTermMemory",
-    "DecisionRecord",
-    "MemoryFormatter",
-    # Graph (LangGraph)
+    # Graph (LangGraph) - 记忆管理由 LangGraph State 自动处理
     "GraphDecisionCoordinator",
     "GraphCoordinatorConfig",
     "TradingState",

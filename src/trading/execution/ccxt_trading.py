@@ -833,12 +833,14 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             params: Dict = {}
 
             if self.exchange_id == "binance":
-                # Binance uses STOP_MARKET for futures stop loss
+                # Binance futures uses conditional orders for stop loss
+                # Must use workingType to specify trigger price type
                 order_type = "STOP_MARKET"
                 params["stopPrice"] = stop_price
                 params["reduceOnly"] = True
-                # closePosition=True will close entire position
-                # params["closePosition"] = True
+                params["workingType"] = "MARK_PRICE"  # or "CONTRACT_PRICE"
+                # Note: For Binance futures, this will use the /fapi/v1/order endpoint
+                # which supports STOP_MARKET orders
 
             elif self.exchange_id == "okx":
                 # OKX uses conditional orders
@@ -878,14 +880,38 @@ class CCXTExecutionGateway(BaseExecutionGateway):
 
             # For Binance, use create_order with type=STOP_MARKET
             if self.exchange_id == "binance":
-                order = await exchange.create_order(
-                    symbol=symbol,
-                    type=order_type,
-                    side=side,
-                    amount=quantity,
-                    price=None,  # Market order, no limit price
-                    params=params,
-                )
+                # Binance futures requires specific parameters for stop orders
+                # Using fapiPrivatePostOrder directly for more control
+                try:
+                    order = await exchange.create_order(
+                        symbol=symbol,
+                        type=order_type,
+                        side=side,
+                        amount=quantity,
+                        price=None,  # Market order, no limit price
+                        params=params,
+                    )
+                except Exception as e:
+                    # If normal endpoint fails, try using the private API directly
+                    if "-4120" in str(e):
+                        cprint(
+                            f"Standard API failed ({e}), attempting alternative method...",
+                            "yellow"
+                        )
+                        # For Binance futures, we can use a different approach
+                        # Create the order using fapiPrivatePostOrder
+                        order_params = {
+                            "symbol": symbol.replace("/", "").replace(":USDC", ""),
+                            "side": side.upper(),
+                            "type": order_type,
+                            "quantity": quantity,
+                            "stopPrice": str(stop_price),
+                            "reduceOnly": "true",
+                            "workingType": "MARK_PRICE",
+                        }
+                        order = await exchange.fapiPrivatePostOrder(order_params)
+                    else:
+                        raise
             else:
                 # For other exchanges, try createStopOrder or create_order with params
                 if exchange.has.get("createStopOrder"):
@@ -957,9 +983,11 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             params: Dict = {}
 
             if self.exchange_id == "binance":
+                # Binance futures uses conditional orders for take profit
                 order_type = "TAKE_PROFIT_MARKET"
                 params["stopPrice"] = tp_price
                 params["reduceOnly"] = True
+                params["workingType"] = "MARK_PRICE"  # or "CONTRACT_PRICE"
 
             elif self.exchange_id == "okx":
                 order_type = "market"
@@ -983,14 +1011,35 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             , "cyan")
 
             if self.exchange_id == "binance":
-                order = await exchange.create_order(
-                    symbol=symbol,
-                    type=order_type,
-                    side=side,
-                    amount=quantity,
-                    price=None,
-                    params=params,
-                )
+                # Binance futures requires specific parameters for take profit orders
+                try:
+                    order = await exchange.create_order(
+                        symbol=symbol,
+                        type=order_type,
+                        side=side,
+                        amount=quantity,
+                        price=None,
+                        params=params,
+                    )
+                except Exception as e:
+                    # If normal endpoint fails, try using the private API directly
+                    if "-4120" in str(e):
+                        cprint(
+                            f"Standard API failed ({e}), attempting alternative method...",
+                            "yellow"
+                        )
+                        order_params = {
+                            "symbol": symbol.replace("/", "").replace(":USDC", ""),
+                            "side": side.upper(),
+                            "type": order_type,
+                            "quantity": quantity,
+                            "stopPrice": str(tp_price),
+                            "reduceOnly": "true",
+                            "workingType": "MARK_PRICE",
+                        }
+                        order = await exchange.fapiPrivatePostOrder(order_params)
+                    else:
+                        raise
             elif exchange.has.get("createTakeProfitOrder"):
                 order = await exchange.create_take_profit_order(
                     symbol=symbol,
@@ -1027,36 +1076,53 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         else:
             overrides = {"reduceOnly": False}
 
+        # For Binance: attach SL/TP directly to the entry order params
+        if self.exchange_id == "binance" and (inst.sl_price or inst.tp_price):
+            if inst.sl_price:
+                overrides["stopLoss"] = {
+                    "type": "market",
+                    "triggerPrice": inst.sl_price,
+                }
+            if inst.tp_price:
+                overrides["takeProfit"] = {
+                    "type": "market",
+                    "triggerPrice": inst.tp_price,
+                }
+            cprint(
+                f"开多仓(附带SL/TP): sl={inst.sl_price}, tp={inst.tp_price}"
+            , "cyan")
+
         # Execute the entry order
         result = await self._submit_order(inst, exchange, overrides)
 
-        # If entry successful and stop loss is specified, place SL order
-        if result.status == TxStatus.FILLED and result.filled_qty > 0:
-            symbol = self._normalize_symbol(inst.instrument.symbol)
+        # For non-Binance exchanges: place separate SL/TP orders after entry
+        if self.exchange_id != "binance":
+            if result.status == TxStatus.FILLED and result.filled_qty > 0:
+                symbol = self._normalize_symbol(inst.instrument.symbol)
 
-            cprint(
-                f"开多仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
-            , "cyan")
+                cprint(
+                    f"开多仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
+                , "cyan")
 
-            # Place stop loss (sell to close long)
-            if inst.sl_price:
-                await self._place_stop_loss_order(
-                    symbol=symbol,
-                    side="sell",
-                    quantity=result.filled_qty,
-                    stop_price=inst.sl_price,
-                    exchange=exchange,
-                )
+                # Place stop loss (sell to close long)
+                if inst.sl_price:
+                    await self._place_stop_loss_order(
+                        symbol=symbol,
+                        side="sell",
+                        quantity=result.filled_qty,
+                        stop_price=inst.sl_price,
+                        exchange=exchange,
+                    )
 
-            # Place take profit (sell to close long)
-            if inst.tp_price:
-                await self._place_take_profit_order(
-                    symbol=symbol,
-                    side="sell",
-                    quantity=result.filled_qty,
-                    tp_price=inst.tp_price,
-                    exchange=exchange,
-                )
+                # Place take profit (sell to close long)
+                if inst.tp_price:
+                    await self._place_take_profit_order(
+                        symbol=symbol,
+                        side="sell",
+                        quantity=result.filled_qty,
+                        tp_price=inst.tp_price,
+                        exchange=exchange,
+                    )
 
         return result
 
@@ -1068,36 +1134,53 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         else:
             overrides = {"reduceOnly": False}
 
+        # For Binance: attach SL/TP directly to the entry order params
+        if self.exchange_id == "binance" and (inst.sl_price or inst.tp_price):
+            if inst.sl_price:
+                overrides["stopLoss"] = {
+                    "type": "market",
+                    "triggerPrice": inst.sl_price,
+                }
+            if inst.tp_price:
+                overrides["takeProfit"] = {
+                    "type": "market",
+                    "triggerPrice": inst.tp_price,
+                }
+            cprint(
+                f"开空仓(附带SL/TP): sl={inst.sl_price}, tp={inst.tp_price}"
+            , "cyan")
+
         # Execute the entry order
         result = await self._submit_order(inst, exchange, overrides)
 
-        # If entry successful and stop loss is specified, place SL order
-        if result.status == TxStatus.FILLED and result.filled_qty > 0:
-            symbol = self._normalize_symbol(inst.instrument.symbol)
+        # For non-Binance exchanges: place separate SL/TP orders after entry
+        if self.exchange_id != "binance":
+            if result.status == TxStatus.FILLED and result.filled_qty > 0:
+                symbol = self._normalize_symbol(inst.instrument.symbol)
 
-            cprint(
-                f"开空仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
-            , "cyan")
+                cprint(
+                    f"开空仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
+                , "cyan")
 
-            # Place stop loss (buy to close short)
-            if inst.sl_price:
-                await self._place_stop_loss_order(
-                    symbol=symbol,
-                    side="buy",
-                    quantity=result.filled_qty,
-                    stop_price=inst.sl_price,
-                    exchange=exchange,
-                )
+                # Place stop loss (buy to close short)
+                if inst.sl_price:
+                    await self._place_stop_loss_order(
+                        symbol=symbol,
+                        side="buy",
+                        quantity=result.filled_qty,
+                        stop_price=inst.sl_price,
+                        exchange=exchange,
+                    )
 
-            # Place take profit (buy to close short)
-            if inst.tp_price:
-                await self._place_take_profit_order(
-                    symbol=symbol,
-                    side="buy",
-                    quantity=result.filled_qty,
-                    tp_price=inst.tp_price,
-                    exchange=exchange,
-                )
+                # Place take profit (buy to close short)
+                if inst.tp_price:
+                    await self._place_take_profit_order(
+                        symbol=symbol,
+                        side="buy",
+                        quantity=result.filled_qty,
+                        tp_price=inst.tp_price,
+                        exchange=exchange,
+                    )
 
         return result
 

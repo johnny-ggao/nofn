@@ -29,5 +29,4 @@ __all__ = [
     "PerformanceAlert",
     "TradingLesson",
     "ReflectionAnalyzer",
-    "ReflectiveComposer",
 ]

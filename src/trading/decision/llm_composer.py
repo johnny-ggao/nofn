@@ -136,10 +136,7 @@ class LlmComposer(BaseComposer):
         self._request = request
         self._default_slippage_bps = default_slippage_bps
         self._quantity_precision = quantity_precision
-
-        # 使用工厂函数创建 LLM
         self._llm = create_llm_from_config(self._request.llm_model_config)
-
         # JSON 输出解析器
         self._parser = JsonOutputParser()
 
@@ -299,6 +296,8 @@ class LlmComposer(BaseComposer):
         features = _group_features(context.features)
         market = _extract_market_section(features.get("market_snapshot", []))
 
+        cprint(f"market: {market}", "white")
+
         # Portfolio positions
         positions = [
             {
@@ -338,22 +337,30 @@ class LlmComposer(BaseComposer):
 
         instructions = (
             "阅读上下文并为每个交易对分别进行独立分析和决策。\n\n"
-            "features.15m = 结构趋势（240 个周期），features.1m = 实时信号（180 个周期）"
             f"待分析交易对: {symbols}\n\n"
+            "数据说明:\n"
+            "- features 包含多时间框架的技术分析数据\n"
+            "- ohlcv_history: 历史 K 线数据 (o=开盘, h=最高, l=最低, c=收盘, v=成交量)\n"
+            "- ema_12_history/ema_26_history/ema_50_history: EMA 历史序列\n"
+            "- macd_history/macd_signal_history/macd_histogram_history: MACD 历史序列\n"
+            "- rsi_history: RSI 历史序列\n"
+            "- 所有历史数据按时间排序，最后一个是最新值\n\n"
             "分析要求:\n"
-            "1. 对每个交易对进行独立的技术分析，不要混合分析\n"
-            "2. 每个交易对的 rationale 必须包含该交易对的完整分析过程:\n"
-            "   - 当前价格和涨跌幅\n"
-            "   - 技术指标分析 (EMA、MACD、RSI 等)\n"
+            "1. 对每个交易对进行独立的技术分析\n"
+            "2. 利用历史数据进行趋势和形态分析:\n"
+            "   - 分析 ohlcv_history 识别支撑阻力位和价格形态\n"
+            "   - 观察 EMA 交叉趋势（ema_12 vs ema_26）\n"
+            "   - 检查 MACD 柱状图变化方向\n"
+            "   - 分析 RSI 是否有背离信号\n"
+            "3. 每个交易对的 rationale 必须包含:\n"
+            "   - 当前价格和关键支撑阻力位\n"
+            "   - EMA/MACD/RSI 趋势分析\n"
             "   - 资金费率评估\n"
-            "   - 持仓情况（如有）\n"
             "   - 入场/出场信号判断\n"
-            "   - 最终决策理由\n"
-            "3. 即使选择 noop，也要在 rationale 中说明为何不操作\n\n"
+            "4. 即使选择 noop，也要说明原因\n\n"
             "上下文说明:\n"
             "- history.historical_summaries = 历史决策摘要（长期记忆）\n"
             "- history.recent_decisions = 最近的决策和执行结果（短期记忆）\n"
-            "- features.market_snapshot = 当前价格和指标\n"
             "- market.funding.rate: 正值表示多头付给空头\n\n"
             "遵守约束条件。输出包含 items 数组的 JSON，每个交易对一个 item。"
         )

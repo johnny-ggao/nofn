@@ -18,7 +18,6 @@ from typing import Optional
 from termcolor import cprint
 
 from src.trading import (
-    DecisionCycleResult,
     StopReason,
     StrategyStatus,
     UserRequest,
@@ -77,18 +76,6 @@ class StrategyAgent:
         """构建决策器。"""
         if self._composer:
             return self._composer
-
-        if self._enable_reflection:
-            from src.trading.reflection import ReflectiveComposer
-
-            cprint("启用反思模式(Reflection Mode)", "white")
-            return ReflectiveComposer(
-                request=self._request,
-                enable_cooldown=True,
-                enable_confidence_filter=True,
-                enable_symbol_filter=True,
-            )
-
         return LlmComposer(request=self._request)
 
     async def start(self) -> str:
@@ -162,8 +149,10 @@ class StrategyAgent:
             cprint(f"策略已取消: {strategy_id}", "yellow")
             raise
         except Exception as e:
+            import traceback
             self._stop_reason = StopReason.ERROR
-            cprint(f"策略错误: {e}", "red"); import traceback; traceback.print_exc()
+            cprint(f"策略错误: {e}", "red")
+            traceback.print_exc()
             raise
         finally:
             await self._cleanup()
@@ -181,13 +170,17 @@ class StrategyAgent:
                 if trades:
                     cprint(f"关闭时平仓 {len(trades)} 个持仓")
             except Exception:
-                cprint("平仓时出错", "red"); import traceback; traceback.print_exc()
+                import traceback
+                cprint("平仓时出错", "red")
+                traceback.print_exc()
                 self._stop_reason = StopReason.ERROR_CLOSING_POSITIONS
 
             try:
                 await self._runtime.coordinator.close()
             except Exception:
-                cprint("关闭协调器时出错", "red"); import traceback; traceback.print_exc()
+                import traceback
+                cprint("关闭协调器时出错", "red")
+                traceback.print_exc()
 
     @property
     def strategy_id(self) -> Optional[str]:

@@ -22,7 +22,22 @@ class SimpleCandleFeatureComputer(CandleBasedFeatureComputer):
     - MACD (with signal and histogram)
     - RSI (14-period)
     - Bollinger Bands (20, 2σ)
+    - ATR (14-period Average True Range)
+    - ADX (14-period Average Directional Index with +DI and -DI)
+
+    历史序列指标（最近 N 个值）:
+    - ema_12_history, ema_26_history, ema_50_history
+    - macd_history, macd_signal_history, macd_histogram_history
+    - rsi_history
     """
+
+    def __init__(self, history_length: int = 30) -> None:
+        """初始化特征计算器。
+
+        Args:
+            history_length: 历史指标序列的长度，默认 30
+        """
+        self._history_length = history_length
 
     def compute_features(
         self,
@@ -87,6 +102,52 @@ class SimpleCandleFeatureComputer(CandleBasedFeatureComputer):
             df["bb_upper"] = df["bb_middle"] + (bb_std * 2)
             df["bb_lower"] = df["bb_middle"] - (bb_std * 2)
 
+            # ATR (Average True Range) - 14-period
+            # True Range = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            df["prev_close"] = df["close"].shift(1)
+            df["prev_high"] = df["high"].shift(1)
+            df["prev_low"] = df["low"].shift(1)
+            df["tr1"] = df["high"] - df["low"]
+            df["tr2"] = abs(df["high"] - df["prev_close"])
+            df["tr3"] = abs(df["low"] - df["prev_close"])
+            df["true_range"] = df[["tr1", "tr2", "tr3"]].max(axis=1)
+            df["atr"] = df["true_range"].rolling(window=14).mean()
+
+            # ADX (Average Directional Index) - 14-period
+            # Calculate directional movement
+            df["high_diff"] = df["high"] - df["prev_high"]
+            df["low_diff"] = df["prev_low"] - df["low"]
+
+            # +DM and -DM (Directional Movement)
+            df["plus_dm"] = np.where(
+                (df["high_diff"] > df["low_diff"]) & (df["high_diff"] > 0),
+                df["high_diff"],
+                0
+            )
+            df["minus_dm"] = np.where(
+                (df["low_diff"] > df["high_diff"]) & (df["low_diff"] > 0),
+                df["low_diff"],
+                0
+            )
+
+            # Smooth DM and TR using EMA
+            period = 14
+            df["plus_dm_smooth"] = df["plus_dm"].ewm(span=period, adjust=False).mean()
+            df["minus_dm_smooth"] = df["minus_dm"].ewm(span=period, adjust=False).mean()
+            df["tr_smooth"] = df["true_range"].ewm(span=period, adjust=False).mean()
+
+            # +DI and -DI (Directional Indicators)
+            df["plus_di"] = 100 * (df["plus_dm_smooth"] / df["tr_smooth"])
+            df["minus_di"] = 100 * (df["minus_dm_smooth"] / df["tr_smooth"])
+
+            # DX (Directional Index)
+            df["di_diff"] = abs(df["plus_di"] - df["minus_di"])
+            df["di_sum"] = df["plus_di"] + df["minus_di"]
+            df["dx"] = 100 * (df["di_diff"] / df["di_sum"].replace(0, np.inf))
+
+            # ADX (Average Directional Index)
+            df["adx"] = df["dx"].ewm(span=period, adjust=False).mean()
+
             last = df.iloc[-1]
             prev = df.iloc[-2] if len(df) > 1 else last
 
@@ -102,10 +163,40 @@ class SimpleCandleFeatureComputer(CandleBasedFeatureComputer):
                     return None
                 return float(val)
 
+            def extract_history(series: pd.Series, length: int) -> List[float]:
+                """提取最近 N 个非 NaN 值，保留 2 位小数。"""
+                valid = series.dropna().tail(length)
+                return [round(float(v), 2) for v in valid.tolist()]
+
+            # 提取历史序列（最近 N 个值）
+            hist_len = self._history_length
+
+            # K 线 OHLCV 历史数据
+            ohlcv_history = []
+            for _, row in df.tail(hist_len).iterrows():
+                ohlcv_history.append({
+                    "ts": int(row["ts"]),
+                    "o": round(float(row["open"]), 2),
+                    "h": round(float(row["high"]), 2),
+                    "l": round(float(row["low"]), 2),
+                    "c": round(float(row["close"]), 2),
+                    "v": round(float(row["volume"]), 2),
+                })
+
+            # 指标历史序列
+            ema_12_hist = extract_history(df["ema_12"], hist_len)
+            ema_26_hist = extract_history(df["ema_26"], hist_len)
+            ema_50_hist = extract_history(df["ema_50"], hist_len)
+            macd_hist = extract_history(df["macd"], hist_len)
+            macd_signal_hist = extract_history(df["macd_signal"], hist_len)
+            macd_histogram_hist = extract_history(df["macd_histogram"], hist_len)
+            rsi_hist = extract_history(df["rsi"], hist_len)
+
             values = {
                 "close": float(last["close"]),
                 "volume": float(last["volume"]),
                 "change_pct": float(change_pct),
+                # 当前值
                 "ema_12": safe_float(last.get("ema_12")),
                 "ema_26": safe_float(last.get("ema_26")),
                 "ema_50": safe_float(last.get("ema_50")),
@@ -116,6 +207,20 @@ class SimpleCandleFeatureComputer(CandleBasedFeatureComputer):
                 "bb_upper": safe_float(last.get("bb_upper")),
                 "bb_middle": safe_float(last.get("bb_middle")),
                 "bb_lower": safe_float(last.get("bb_lower")),
+                "atr": safe_float(last.get("atr")),
+                "adx": safe_float(last.get("adx")),
+                "plus_di": safe_float(last.get("plus_di")),
+                "minus_di": safe_float(last.get("minus_di")),
+                # K 线 OHLCV 历史（从旧到新）
+                "ohlcv_history": ohlcv_history,
+                # 指标历史序列（从旧到新）
+                "ema_12_history": ema_12_hist,
+                "ema_26_history": ema_26_hist,
+                "ema_50_history": ema_50_hist,
+                "macd_history": macd_hist,
+                "macd_signal_history": macd_signal_hist,
+                "macd_histogram_history": macd_histogram_hist,
+                "rsi_history": rsi_hist,
             }
 
             # Build feature meta

@@ -156,7 +156,8 @@ class ReflectiveComposer(BaseComposer):
         # 记录反思结果
         if insight.alerts:
             for alert in insight.alerts:
-                log_fn = lambda msg: cprint(msg, "yellow") if alert.severity == "critical" else cprint(msg, "white")
+                def log_fn(msg):
+                    return cprint(msg, "yellow") if alert.severity == "critical" else cprint(msg, "white")
                 log_fn(f"反思警报 [{alert.severity}]: {alert.message}")
 
         if insight.lessons:

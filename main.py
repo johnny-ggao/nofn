@@ -4,9 +4,7 @@ NOFN Trading System - ValueCell Style Architecture
 Main entry point for the trading system.
 """
 
-import argparse
 import asyncio
-import sys
 
 from dotenv import load_dotenv
 from termcolor import cprint
@@ -25,53 +23,11 @@ from src.trading import (
 from src.strategy import StrategyAgent
 
 
-def parse_args():
-    """解析命令行参数."""
-    parser = argparse.ArgumentParser(description="NOFN Trading System")
-    parser.add_argument(
-        "--template", "-t",
-        type=str,
-        default=None,
-        help="Strategy template: default, aggressive, insane, funding_rate (or path to custom template)",
-    )
-    parser.add_argument(
-        "--symbols", "-s",
-        type=str,
-        nargs="+",
-        default=None,
-        help="Trading symbols (e.g., BTC/USDT:USDT ETH/USDT:USDT)",
-    )
-    parser.add_argument(
-        "--mode", "-m",
-        type=str,
-        choices=["live", "virtual"],
-        default=None,
-        help="Trading mode: live or virtual",
-    )
-    parser.add_argument(
-        "--interval", "-i",
-        type=int,
-        default=None,
-        help="Decision interval in seconds",
-    )
-    parser.add_argument(
-        "--list-templates",
-        action="store_true",
-        help="List available templates and exit",
-    )
-    parser.add_argument(
-        "--reflection", "-r",
-        action="store_true",
-        help="Enable reflection mode (自动分析历史表现并调整策略)",
-    )
-    return parser.parse_args()
-
-
-def create_user_request(args) -> UserRequest:
-    """Create user request from settings and command line args."""
+def create_user_request() -> UserRequest:
+    """根据配置文件创建用户请求"""
     settings = get_settings()
 
-    # Build summary LLM config if configured
+    # 如果已配置，则构建 LLM 配置摘要
     summary_llm_config = None
     if settings.llm.summary and settings.llm.summary.enabled:
         summary_llm_config = SummaryLLMConfig(
@@ -87,7 +43,7 @@ def create_user_request(args) -> UserRequest:
             "white"
         )
 
-    # Build LLM config from YAML + secrets
+    # 从 YAML 和密钥构建 LLM 配置
     llm_config = LLMModelConfig(
         provider=settings.llm.provider,
         model_id=settings.llm.model,
@@ -97,7 +53,7 @@ def create_user_request(args) -> UserRequest:
         summary_llm=summary_llm_config,
     )
 
-    # Build exchange config from YAML + secrets
+    # 从 YAML 和密钥构建交易所配置
     trading_mode = (
         TradingMode.LIVE
         if settings.strategy.trading_mode.lower() == "live"
@@ -123,7 +79,7 @@ def create_user_request(args) -> UserRequest:
         MarginMode.CROSS,
     )
 
-    # Get settle_coin from config (default to USDT)
+    # 从配置中获取结算币（默认为 USDT）
     settle_coin = getattr(settings.exchange, "settle_coin", "USDT")
 
     exchange_config = ExchangeConfig(
@@ -138,20 +94,15 @@ def create_user_request(args) -> UserRequest:
         settle_coin=settle_coin,
     )
 
-    # Command line args override config file
-    template = args.template if args.template else settings.strategy.template
-    symbols = args.symbols if args.symbols else settings.strategy.symbols
-    decide_interval = args.interval if args.interval else settings.strategy.decide_interval
-
-    # Build trading config from YAML + command line overrides
+    # 从配置文件构建交易配置
     trading_config = TradingConfig(
         strategy_name=settings.strategy.name,
-        template_id=template,
-        symbols=symbols,
+        template_id=settings.strategy.template,
+        symbols=settings.strategy.symbols,
         initial_capital=settings.strategy.initial_capital,
         max_leverage=settings.strategy.max_leverage,
         max_positions=settings.strategy.max_positions,
-        decide_interval=decide_interval,
+        decide_interval=settings.strategy.decide_interval,
     )
 
     return UserRequest(
@@ -163,44 +114,30 @@ def create_user_request(args) -> UserRequest:
 
 async def main():
     """Main function."""
-    args = parse_args()
-
-    if args.list_templates:
-        from src.strategy import list_templates
-        cprint("可用模板:", "white")
-        for name in list_templates():
-            cprint(f"  - {name}", "white")
-        return
-
-    # 记载环境变量
+    # 加载环境变量
     load_dotenv()
     load_env()
 
     # 读取配置文件
     settings = get_settings()
 
-    template = args.template if args.template else settings.strategy.template
-    symbols = args.symbols if args.symbols else settings.strategy.symbols
-    mode = args.mode if args.mode else settings.strategy.trading_mode
-    interval = args.interval if args.interval else settings.strategy.decide_interval
-
     cprint("=" * 50, "cyan")
     cprint("NOFN Trading System", "cyan", attrs=["bold"])
     cprint("=" * 50, "cyan")
 
-    # 反思模式
-    enable_reflection = args.reflection
-
     cprint(f"交易所: {settings.exchange.id.upper()}", "white")
-    cprint(f"交易对: {symbols}", "white")
-    cprint(f"策略模版: {template}", "white")
-    cprint(f"运行间隔: {interval}s", "white")
-    cprint(f"模式: {mode.upper()}", "white")
+    cprint(f"交易对: {settings.strategy.symbols}", "white")
+    cprint(f"策略模版: {settings.strategy.template}", "white")
+    cprint(f"运行间隔: {settings.strategy.decide_interval}s", "white")
+    cprint(f"模式: {settings.strategy.trading_mode.upper()}", "white")
     cprint(f"LLM: {settings.llm.provider}/{settings.llm.model}", "white")
+
+    # 反思模式从配置文件读取
+    enable_reflection = getattr(settings.strategy, "enable_reflection", False)
 
     agent = None
     try:
-        request = create_user_request(args)
+        request = create_user_request()
 
         cprint("正在初始化策略代理...", "white")
         agent = StrategyAgent(
@@ -209,7 +146,7 @@ async def main():
         )
 
         strategy_id = await agent.start()
-        cprint(f"✓ 策略已启动: {strategy_id}", "green")
+        cprint(f"策略已启动: {strategy_id}", "green")
 
         cprint("=" * 50, "cyan")
         cprint("开始交易循环", "cyan", attrs=["bold"])
@@ -224,7 +161,7 @@ async def main():
             await agent.stop()
     except Exception as e:
         import traceback
-        cprint(f"✗ 系统错误: {e}", "red")
+        cprint(f"系统错误: {e}", "red")
         traceback.print_exc()
     finally:
         cprint("交易系统已停止", "yellow")
