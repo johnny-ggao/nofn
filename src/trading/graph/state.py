@@ -42,6 +42,11 @@ class DecisionMemory(TypedDict):
     executed: bool
     exec_price: Optional[float]
     realized_pnl: Optional[float]
+    # 新增字段：更详细的订单执行信息
+    leverage: Optional[float]  # 杠杆倍数
+    sl_price: Optional[float]  # 止损价
+    tp_price: Optional[float]  # 止盈价
+    fee_cost: Optional[float]  # 手续费
 
 
 def _merge_memories(
@@ -126,11 +131,15 @@ class TradingState(TypedDict):
 
     # 市场数据（由外部传入）
     features: List[Dict[str, Any]]  # FeatureVector 的 dict 形式
+    feature_instructions: str  # 特征计算器提供的指标说明
     portfolio: Dict[str, Any]  # PortfolioView 的 dict 形式
     digest: Dict[str, Any]  # TradeDigest 的 dict 形式
 
     # 历史记录（由外部传入，用于反思分析）
     history_records: List[Dict[str, Any]]  # HistoryRecord 的 dict 形式
+
+    # 交易所真实订单历史（由外部传入）
+    recent_exchange_orders: List[Dict[str, Any]]  # 从交易所 API 获取的最近订单
 
     # 决策结果（由 decide 节点填充）
     instructions: List[Dict[str, Any]]  # TradeInstruction 的 dict 形式
@@ -189,6 +198,7 @@ def create_initial_state(
     portfolio: Dict[str, Any],
     digest: Dict[str, Any],
     history_records: Optional[List[Dict[str, Any]]] = None,
+    recent_exchange_orders: Optional[List[Dict[str, Any]]] = None,
     reflection_enabled: bool = False,
 ) -> TradingState:
     """创建初始状态。
@@ -203,6 +213,7 @@ def create_initial_state(
         portfolio: 投资组合视图
         digest: 交易摘要
         history_records: 历史记录（用于反思分析）
+        recent_exchange_orders: 交易所最近订单历史
         reflection_enabled: 是否启用反思模式
     """
     return TradingState(
@@ -213,6 +224,7 @@ def create_initial_state(
         portfolio=portfolio,
         digest=digest,
         history_records=history_records or [],
+        recent_exchange_orders=recent_exchange_orders or [],
         instructions=[],
         rationale=None,
         trades=[],
@@ -240,15 +252,22 @@ def state_to_compose_context(state: TradingState) -> Dict[str, Any]:
     # 从 memories 提取最近 5 条用于 prompt
     recent_decisions = []
     for m in state["memories"][-5:]:
-        recent_decisions.append({
+        decision = {
             "cycle": m["cycle_index"],
+            "ts": m["timestamp_ms"],
             "action": m["action"],
             "symbol": m["symbol"],
+            "qty": m.get("quantity"),
             "executed": m["executed"],
             "exec_price": m.get("exec_price"),
             "realized_pnl": m.get("realized_pnl"),
+            "leverage": m.get("leverage"),
+            "sl_price": m.get("sl_price"),
+            "tp_price": m.get("tp_price"),
+            "fee_cost": m.get("fee_cost"),
             "reason": m.get("rationale", "")[:100] if m.get("rationale") else None,
-        })
+        }
+        recent_decisions.append(decision)
 
     # 从 summaries 提取历史摘要
     history_summaries = []
@@ -268,11 +287,13 @@ def state_to_compose_context(state: TradingState) -> Dict[str, Any]:
         "compose_id": state["compose_id"],
         "strategy_id": state["strategy_id"],
         "features": state["features"],
+        "feature_instructions": state.get("feature_instructions", ""),
         "portfolio": state["portfolio"],
         "digest": state["digest"],
         "recent_decisions": recent_decisions,
         "history_summaries": history_summaries,
         "pending_signals": dict(state["pending_signals"]),
+        "recent_exchange_orders": state.get("recent_exchange_orders", []),
     }
 
     # 添加反思上下文（如果有）
@@ -404,6 +425,10 @@ def create_memory_from_result(
             executed=False,
             exec_price=None,
             realized_pnl=None,
+            leverage=None,
+            sl_price=None,
+            tp_price=None,
+            fee_cost=None,
         ))
         return memories
 
@@ -430,6 +455,10 @@ def create_memory_from_result(
             executed=trade is not None,
             exec_price=trade.get("avg_exec_price") if trade else None,
             realized_pnl=trade.get("realized_pnl") if trade else None,
+            leverage=inst.get("leverage"),
+            sl_price=inst.get("sl_price"),
+            tp_price=inst.get("tp_price"),
+            fee_cost=trade.get("fee_cost") if trade else None,
         ))
 
     return memories

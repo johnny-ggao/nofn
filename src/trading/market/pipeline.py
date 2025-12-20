@@ -2,9 +2,12 @@
 
 This module provides the DefaultFeaturesPipeline which:
 1. Fetches OHLCV candle data via CCXT
-2. Computes technical indicators (EMA, MACD, RSI, Bollinger Bands, ATR, ADX)
+2. Computes technical indicators based on configured feature computers
 3. Fetches market snapshots (ticker, funding rate, open interest)
 4. Combines all features for LLM decision-making
+
+Each candle configuration can specify its own feature computer, allowing
+different indicators for different timeframes.
 """
 
 from __future__ import annotations
@@ -23,16 +26,18 @@ from ..models import (
 )
 from .data_interfaces import BaseMarketDataSource
 from .data_source import SimpleMarketDataSource
-from .candle import SimpleCandleFeatureComputer
-from .feature_interfaces import BaseFeaturesPipeline, CandleBasedFeatureComputer
+from .features import get_feature_computer
+from .feature_interfaces import BaseFeaturesPipeline
 from .market_snapshot import SimpleMarketSnapshotFeatureComputer
 
 
 class DefaultFeaturesPipeline(BaseFeaturesPipeline):
     """Default pipeline that fetches market data and computes technical indicators.
 
+    Supports per-timeframe feature computer configuration via CandleConfig.feature_computer.
+
     Produces:
-    - Candle-based features: EMA, MACD, RSI, Bollinger Bands, ATR, ADX
+    - Candle-based features: configurable per timeframe
     - Market snapshot features: price, funding rate, open interest
     """
 
@@ -41,7 +46,6 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         *,
         request: UserRequest,
         market_data_source: BaseMarketDataSource,
-        candle_feature_computer: CandleBasedFeatureComputer,
         market_snapshot_computer: SimpleMarketSnapshotFeatureComputer,
         candle_configurations: Optional[List[CandleConfig]] = None,
     ) -> None:
@@ -50,20 +54,18 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         Args:
             request: User request with configuration
             market_data_source: Market data source for fetching candles and snapshots
-            candle_feature_computer: Computer for technical indicators
             market_snapshot_computer: Computer for market snapshot features
-            candle_configurations: List of candle configs (interval, lookback pairs)
+            candle_configurations: List of candle configs (interval, lookback, feature_computer)
         """
         self._request = request
         self._market_data_source = market_data_source
-        self._candle_feature_computer = candle_feature_computer
         self._market_snapshot_computer = market_snapshot_computer
         self._symbols = list(dict.fromkeys(request.trading_config.symbols))
 
         # Default candle configurations
         self._candle_configurations = candle_configurations or [
-            CandleConfig(interval="3m", lookback=60 * 3),
-            CandleConfig(interval="4h", lookback=60 * 4),
+            CandleConfig(interval="15m", lookback=60 * 3, feature_computer="trend_following"),
+            CandleConfig(interval="4h", lookback=60 * 3, feature_computer="trend_following"),
         ]
 
     @classmethod
@@ -72,7 +74,6 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         exchange_id = request.exchange_config.exchange_id or "binance"
 
         market_data_source = SimpleMarketDataSource(exchange_id=exchange_id)
-        candle_feature_computer = SimpleCandleFeatureComputer()
         market_snapshot_computer = SimpleMarketSnapshotFeatureComputer(
             exchange_id=exchange_id
         )
@@ -80,7 +81,6 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         return cls(
             request=request,
             market_data_source=market_data_source,
-            candle_feature_computer=candle_feature_computer,
             market_snapshot_computer=market_snapshot_computer,
         )
 
@@ -88,16 +88,22 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         """Build feature vectors from market data.
 
         Fetches candles and market snapshot concurrently, computes features,
-        and combines all results.
+        and combines all results. Each timeframe uses its configured feature computer.
         """
 
-        async def _fetch_candles(interval: str, lookback: int) -> List[FeatureVector]:
-            """Fetch candles and compute features for a single config."""
+        async def _fetch_candles(config: CandleConfig) -> List[FeatureVector]:
+            """获取 K 线并使用配置的计算器计算特征。"""
             candles = await self._market_data_source.get_recent_candles(
-                self._symbols, interval, lookback
+                self._symbols, config.interval, config.lookback
             )
-            cprint(f"candles count: {len(candles)}", "white")
-            return self._candle_feature_computer.compute_features(candles=candles)
+            cprint(
+                f"[{config.interval}] candles: {len(candles)}, "
+                f"computer: {config.feature_computer}",
+                "white",
+            )
+            # 根据配置获取对应的特征计算器
+            computer = get_feature_computer(config.feature_computer)
+            return computer.compute_features(candles=candles)
 
         async def _fetch_market_features() -> List[FeatureVector]:
             """Fetch market snapshot and compute features."""
@@ -116,10 +122,7 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
         )
 
         # Build concurrent tasks: [candle_task_1, candle_task_2, ..., market_task]
-        tasks = [
-            _fetch_candles(config.interval, config.lookback)
-            for config in self._candle_configurations
-        ]
+        tasks = [_fetch_candles(config) for config in self._candle_configurations]
         tasks.append(_fetch_market_features())
 
         # Execute concurrently
@@ -140,7 +143,30 @@ class DefaultFeaturesPipeline(BaseFeaturesPipeline):
 
         cprint(f"candle_features count: {len(candle_features)}", "white")
 
-        return FeaturesPipelineResult(features=candle_features)
+        # 收集所有特征计算器的说明（去重）
+        feature_instructions = self._collect_feature_instructions()
+
+        return FeaturesPipelineResult(
+            features=candle_features,
+            feature_instructions=feature_instructions,
+        )
+
+    def _collect_feature_instructions(self) -> str:
+        """收集所有配置的特征计算器的说明。"""
+        seen_computers = set()
+        instructions_parts = []
+
+        for config in self._candle_configurations:
+            if config.feature_computer in seen_computers:
+                continue
+            seen_computers.add(config.feature_computer)
+
+            computer = get_feature_computer(config.feature_computer)
+            instruction = computer.get_feature_instructions()
+            if instruction:
+                instructions_parts.append(instruction)
+
+        return "\n\n".join(instructions_parts)
 
     async def close(self) -> None:
         """Close any open connections."""

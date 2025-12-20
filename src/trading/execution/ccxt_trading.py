@@ -1076,53 +1076,40 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         else:
             overrides = {"reduceOnly": False}
 
-        # For Binance: attach SL/TP directly to the entry order params
-        if self.exchange_id == "binance" and (inst.sl_price or inst.tp_price):
-            if inst.sl_price:
-                overrides["stopLoss"] = {
-                    "type": "market",
-                    "triggerPrice": inst.sl_price,
-                }
-            if inst.tp_price:
-                overrides["takeProfit"] = {
-                    "type": "market",
-                    "triggerPrice": inst.tp_price,
-                }
-            cprint(
-                f"开多仓(附带SL/TP): sl={inst.sl_price}, tp={inst.tp_price}"
-            , "cyan")
-
         # Execute the entry order
         result = await self._submit_order(inst, exchange, overrides)
 
-        # For non-Binance exchanges: place separate SL/TP orders after entry
-        if self.exchange_id != "binance":
-            if result.status == TxStatus.FILLED and result.filled_qty > 0:
-                symbol = self._normalize_symbol(inst.instrument.symbol)
+        # Place separate SL/TP orders after entry is filled
+        # Note: Binance Futures does NOT support attaching SL/TP to entry orders,
+        # must place separate conditional orders
+        if result.status == TxStatus.FILLED and result.filled_qty > 0:
+            symbol = self._normalize_symbol(inst.instrument.symbol)
 
+            if inst.sl_price or inst.tp_price:
                 cprint(
-                    f"开多仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
-                , "cyan")
+                    f"开多仓成功，下止损止盈单: sl={inst.sl_price}, tp={inst.tp_price}",
+                    "cyan",
+                )
 
-                # Place stop loss (sell to close long)
-                if inst.sl_price:
-                    await self._place_stop_loss_order(
-                        symbol=symbol,
-                        side="sell",
-                        quantity=result.filled_qty,
-                        stop_price=inst.sl_price,
-                        exchange=exchange,
-                    )
+            # Place stop loss (sell to close long)
+            if inst.sl_price:
+                await self._place_stop_loss_order(
+                    symbol=symbol,
+                    side="sell",
+                    quantity=result.filled_qty,
+                    stop_price=inst.sl_price,
+                    exchange=exchange,
+                )
 
-                # Place take profit (sell to close long)
-                if inst.tp_price:
-                    await self._place_take_profit_order(
-                        symbol=symbol,
-                        side="sell",
-                        quantity=result.filled_qty,
-                        tp_price=inst.tp_price,
-                        exchange=exchange,
-                    )
+            # Place take profit (sell to close long)
+            if inst.tp_price:
+                await self._place_take_profit_order(
+                    symbol=symbol,
+                    side="sell",
+                    quantity=result.filled_qty,
+                    tp_price=inst.tp_price,
+                    exchange=exchange,
+                )
 
         return result
 
@@ -1134,60 +1121,47 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         else:
             overrides = {"reduceOnly": False}
 
-        # For Binance: attach SL/TP directly to the entry order params
-        if self.exchange_id == "binance" and (inst.sl_price or inst.tp_price):
-            if inst.sl_price:
-                overrides["stopLoss"] = {
-                    "type": "market",
-                    "triggerPrice": inst.sl_price,
-                }
-            if inst.tp_price:
-                overrides["takeProfit"] = {
-                    "type": "market",
-                    "triggerPrice": inst.tp_price,
-                }
-            cprint(
-                f"开空仓(附带SL/TP): sl={inst.sl_price}, tp={inst.tp_price}"
-            , "cyan")
-
         # Execute the entry order
         result = await self._submit_order(inst, exchange, overrides)
 
-        # For non-Binance exchanges: place separate SL/TP orders after entry
-        if self.exchange_id != "binance":
-            if result.status == TxStatus.FILLED and result.filled_qty > 0:
-                symbol = self._normalize_symbol(inst.instrument.symbol)
+        # Place separate SL/TP orders after entry is filled
+        # Note: Binance Futures does NOT support attaching SL/TP to entry orders,
+        # must place separate conditional orders
+        if result.status == TxStatus.FILLED and result.filled_qty > 0:
+            symbol = self._normalize_symbol(inst.instrument.symbol)
 
+            if inst.sl_price or inst.tp_price:
                 cprint(
-                    f"开空仓成功，检查止损止盈: sl_price={inst.sl_price}, tp_price={inst.tp_price}"
-                , "cyan")
+                    f"开空仓成功，下止损止盈单: sl={inst.sl_price}, tp={inst.tp_price}",
+                    "cyan",
+                )
 
-                # Place stop loss (buy to close short)
-                if inst.sl_price:
-                    await self._place_stop_loss_order(
-                        symbol=symbol,
-                        side="buy",
-                        quantity=result.filled_qty,
-                        stop_price=inst.sl_price,
-                        exchange=exchange,
-                    )
+            # Place stop loss (buy to close short)
+            if inst.sl_price:
+                await self._place_stop_loss_order(
+                    symbol=symbol,
+                    side="buy",
+                    quantity=result.filled_qty,
+                    stop_price=inst.sl_price,
+                    exchange=exchange,
+                )
 
-                # Place take profit (buy to close short)
-                if inst.tp_price:
-                    await self._place_take_profit_order(
-                        symbol=symbol,
-                        side="buy",
-                        quantity=result.filled_qty,
-                        tp_price=inst.tp_price,
-                        exchange=exchange,
-                    )
+            # Place take profit (buy to close short)
+            if inst.tp_price:
+                await self._place_take_profit_order(
+                    symbol=symbol,
+                    side="buy",
+                    quantity=result.filled_qty,
+                    tp_price=inst.tp_price,
+                    exchange=exchange,
+                )
 
         return result
 
     async def _cancel_open_orders_for_symbol(
         self, symbol: str, exchange: ccxt.Exchange
     ) -> int:
-        """Cancel all open orders (including SL/TP) for a symbol.
+        """Cancel all open orders (including SL/TP conditional orders) for a symbol.
 
         Args:
             symbol: Normalized symbol (e.g., 'BTC/USDC:USDC')
@@ -1197,29 +1171,197 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             Number of orders cancelled
         """
         cancelled_count = 0
-        try:
-            # Fetch all open orders for the symbol
-            open_orders = await exchange.fetch_open_orders(symbol)
 
-            if not open_orders:
-                cprint(f"No open orders to cancel for {symbol}", "magenta")
+        cprint(f"Cancelling all open orders for {symbol}...", "magenta")
+
+        # For Binance Futures: need to cancel both regular orders AND Algo Orders
+        # Algo Orders are used for STOP_MARKET, TAKE_PROFIT_MARKET conditionals
+        if self.exchange_id == "binance":
+            # Step 1: Cancel regular orders using cancel_all_orders
+            try:
+                result = await exchange.cancel_all_orders(symbol)
+                if result:
+                    if isinstance(result, list):
+                        cancelled_count = len(result)
+                    else:
+                        cancelled_count = 1
+                    cprint(
+                        f"Cancelled regular orders for {symbol} (count: {cancelled_count})",
+                        "cyan",
+                    )
+            except Exception as e:
+                cprint(f"cancel_all_orders failed for {symbol}: {e}", "yellow")
+
+            # Step 2: Cancel Algo Orders (conditional orders like STOP_MARKET, TAKE_PROFIT_MARKET)
+            algo_cancelled = await self._cancel_binance_algo_orders(symbol, exchange)
+            cancelled_count += algo_cancelled
+        else:
+            # For other exchanges, cancel orders one by one
+            cancelled_count = await self._cancel_orders_manually(symbol, exchange)
+
+        return cancelled_count
+
+    async def _cancel_binance_algo_orders(
+        self, symbol: str, exchange: ccxt.Exchange
+    ) -> int:
+        """Cancel Binance Futures Algo Orders (conditional orders) for a symbol.
+
+        Binance Futures stores STOP_MARKET and TAKE_PROFIT_MARKET orders as "Algo Orders"
+        which require special API endpoints to query and cancel:
+        - Query: GET /fapi/v1/openAlgoOrders -> fapiPrivateGetOpenAlgoOrders
+        - Cancel: DELETE /fapi/v1/algoOrder -> fapiPrivateDeleteAlgoOrder
+        - Cancel all: DELETE /fapi/v1/algo/openOrders -> fapiPrivateDeleteAlgoOpenOrders
+
+        Args:
+            symbol: Normalized symbol (e.g., 'BTC/USDC:USDC')
+            exchange: CCXT exchange instance
+
+        Returns:
+            Number of Algo Orders cancelled
+        """
+        cancelled_count = 0
+
+        try:
+            # Convert symbol to Binance format (e.g., 'BTC/USDC:USDC' -> 'BTCUSDC')
+            binance_symbol = symbol.replace("/", "").replace(":USDC", "").replace(":USDT", "")
+
+            # Try to cancel all algo orders at once first (more efficient)
+            # Using DELETE /fapi/v1/algo/openOrders
+            try:
+                if hasattr(exchange, "fapiPrivateDeleteAlgoOpenOrders"):
+                    result = await exchange.fapiPrivateDeleteAlgoOpenOrders({
+                        "symbol": binance_symbol,
+                    })
+                    cprint(f"Cancelled all Algo Orders for {symbol}: {result}", "cyan")
+                    # Result contains list of cancelled orders
+                    if isinstance(result, dict) and "orders" in result:
+                        cancelled_count = len(result["orders"])
+                    elif isinstance(result, list):
+                        cancelled_count = len(result)
+                    else:
+                        cancelled_count = 1 if result else 0
+                    return cancelled_count
+                elif hasattr(exchange, "fapiprivate_delete_algoopenorders"):
+                    result = await exchange.fapiprivate_delete_algoopenorders({
+                        "symbol": binance_symbol,
+                    })
+                    cprint(f"Cancelled all Algo Orders for {symbol}: {result}", "cyan")
+                    if isinstance(result, dict) and "orders" in result:
+                        cancelled_count = len(result["orders"])
+                    elif isinstance(result, list):
+                        cancelled_count = len(result)
+                    else:
+                        cancelled_count = 1 if result else 0
+                    return cancelled_count
+            except Exception as e:
+                # If batch cancel fails, fall back to individual cancellation
+                cprint(f"Batch cancel Algo Orders failed: {e}, trying individual cancel", "yellow")
+
+            # Fetch open Algo Orders
+            # Note: CCXT uses fapiPrivateGetOpenAlgoOrders (not fapiPrivateGetAlgoOpenOrders)
+            algo_orders = None
+            try:
+                if hasattr(exchange, "fapiPrivateGetOpenAlgoOrders"):
+                    algo_orders = await exchange.fapiPrivateGetOpenAlgoOrders({
+                        "symbol": binance_symbol,
+                    })
+                elif hasattr(exchange, "fapiprivate_get_openalgoorders"):
+                    algo_orders = await exchange.fapiprivate_get_openalgoorders({
+                        "symbol": binance_symbol,
+                    })
+                else:
+                    cprint(
+                        "Binance Algo Orders API not available in this CCXT version",
+                        "yellow",
+                    )
+                    return 0
+            except Exception as e:
+                cprint(f"Failed to fetch Algo Orders: {e}", "yellow")
                 return 0
 
-            cprint(f"Found {len(open_orders)} open orders for {symbol}, cancelling...")
+            # Check if we got orders
+            orders_list = algo_orders.get("orders", []) if isinstance(algo_orders, dict) else algo_orders
+            if not orders_list:
+                cprint(f"No Algo Orders found for {symbol}", "magenta")
+                return 0
 
-            for order in open_orders:
-                order_id = order.get("id")
-                order_type = order.get("type", "unknown")
-                order_side = order.get("side", "unknown")
+            cprint(f"Found {len(orders_list)} Algo Orders for {symbol}", "magenta")
+
+            # Cancel each Algo Order
+            for order in orders_list:
+                algo_id = order.get("algoId")
+                algo_type = order.get("algoType", "unknown")
+                algo_status = order.get("algoStatus", "unknown")
+
+                if not algo_id:
+                    continue
+
+                # Only cancel active orders
+                if algo_status not in ("NEW", "PARTIALLY_FILLED"):
+                    continue
+
                 try:
-                    await exchange.cancel_order(order_id, symbol)
+                    # Cancel using DELETE /fapi/v1/algoOrder
+                    if hasattr(exchange, "fapiPrivateDeleteAlgoOrder"):
+                        await exchange.fapiPrivateDeleteAlgoOrder({
+                            "symbol": binance_symbol,
+                            "algoId": algo_id,
+                        })
+                    elif hasattr(exchange, "fapiprivate_delete_algoorder"):
+                        await exchange.fapiprivate_delete_algoorder({
+                            "symbol": binance_symbol,
+                            "algoId": algo_id,
+                        })
+                    else:
+                        cprint(f"No method to cancel Algo Order {algo_id}", "yellow")
+                        continue
+
                     cancelled_count += 1
                     cprint(
-                        f"Cancelled order {order_id}: {order_type} {order_side}"
-                    , "cyan")
+                        f"Cancelled Algo Order {algo_id}: {algo_type} ({algo_status})",
+                        "cyan",
+                    )
                 except Exception as e:
-                    cprint(f"Failed to cancel order {order_id}: {e}", "yellow")
+                    cprint(f"Failed to cancel Algo Order {algo_id}: {e}", "yellow")
 
+        except Exception as e:
+            cprint(f"Failed to fetch/cancel Algo Orders for {symbol}: {e}", "yellow")
+
+        if cancelled_count > 0:
+            cprint(f"Cancelled {cancelled_count} Algo Orders for {symbol}", "cyan")
+
+        return cancelled_count
+
+    async def _cancel_orders_manually(
+        self, symbol: str, exchange: ccxt.Exchange
+    ) -> int:
+        """Manually fetch and cancel each open order for a symbol.
+
+        Fallback method when cancel_all_orders is not available or fails.
+        """
+        cancelled_count = 0
+        try:
+            open_orders = await exchange.fetch_open_orders(symbol)
+            if open_orders:
+                cprint(
+                    f"Found {len(open_orders)} open orders for {symbol}, cancelling...",
+                    "magenta",
+                )
+                for order in open_orders:
+                    order_id = order.get("id")
+                    order_type = order.get("type", "unknown")
+                    order_side = order.get("side", "unknown")
+                    try:
+                        await exchange.cancel_order(order_id, symbol)
+                        cancelled_count += 1
+                        cprint(
+                            f"Cancelled order {order_id}: {order_type} {order_side}",
+                            "cyan",
+                        )
+                    except Exception as e:
+                        cprint(f"Failed to cancel order {order_id}: {e}", "yellow")
+            else:
+                cprint(f"No open orders found for {symbol}", "magenta")
         except Exception as e:
             cprint(f"Failed to fetch/cancel open orders for {symbol}: {e}", "yellow")
 
@@ -1312,6 +1454,165 @@ class CCXTExecutionGateway(BaseExecutionGateway):
         exchange = await self._get_exchange()
         normalized_symbol = self._normalize_symbol(symbol) if symbol else None
         return await exchange.fetch_open_orders(normalized_symbol)
+
+    async def fetch_recent_trades(
+        self,
+        symbols: Optional[List[str]] = None,
+        since_ms: Optional[int] = None,
+        limit: int = 20,
+    ) -> List[Dict]:
+        """Fetch recent trades (my trades) from exchange.
+
+        获取最近的成交记录，用于了解最近的开平仓情况。
+
+        Args:
+            symbols: 要查询的交易对列表，None 表示查询所有配置的交易对
+            since_ms: 起始时间戳（毫秒），None 表示获取最近的
+            limit: 每个交易对返回的最大记录数
+
+        Returns:
+            成交记录列表，每条记录包含：
+            - symbol: 交易对
+            - side: buy/sell
+            - amount: 成交数量
+            - price: 成交价格
+            - cost: 成交金额
+            - fee: 手续费
+            - timestamp: 时间戳
+            - datetime: ISO 时间字符串
+            - info: 原始交易所数据
+        """
+        exchange = await self._get_exchange()
+
+        if not exchange.has.get("fetchMyTrades"):
+            cprint(f"{self.exchange_id} does not support fetchMyTrades", "yellow")
+            return []
+
+        all_trades: List[Dict] = []
+
+        # 如果没有指定 symbols，返回空（需要外部传入）
+        if not symbols:
+            return []
+
+        for symbol in symbols:
+            try:
+                normalized_symbol = self._normalize_symbol(symbol)
+                trades = await exchange.fetch_my_trades(
+                    symbol=normalized_symbol,
+                    since=since_ms,
+                    limit=limit,
+                )
+
+                # 标准化并添加到结果
+                for trade in trades:
+                    # CCXT 返回的 trade 结构已经比较标准化
+                    # 添加一些便于理解的字段
+                    trade_info = {
+                        "symbol": symbol,  # 使用原始 symbol
+                        "normalized_symbol": normalized_symbol,
+                        "side": trade.get("side"),  # buy/sell
+                        "amount": trade.get("amount"),
+                        "price": trade.get("price"),
+                        "cost": trade.get("cost"),
+                        "fee": trade.get("fee"),
+                        "timestamp": trade.get("timestamp"),
+                        "datetime": trade.get("datetime"),
+                        "order_id": trade.get("order"),
+                        "trade_id": trade.get("id"),
+                        # 推断交易类型（开仓/平仓）- 需要结合持仓判断
+                        # 这里只提供原始数据，让上层逻辑判断
+                        "info": trade.get("info", {}),
+                    }
+                    all_trades.append(trade_info)
+
+            except Exception as e:
+                cprint(f"Failed to fetch trades for {symbol}: {e}", "yellow")
+
+        # 按时间倒序排列（最新的在前）
+        all_trades.sort(key=lambda t: t.get("timestamp", 0), reverse=True)
+
+        return all_trades
+
+    async def fetch_recent_orders(
+        self,
+        symbols: Optional[List[str]] = None,
+        since_ms: Optional[int] = None,
+        limit: int = 20,
+    ) -> List[Dict]:
+        """Fetch recent orders (closed orders) from exchange.
+
+        获取最近的订单记录（包括已完成的订单），用于了解最近的交易活动。
+
+        Args:
+            symbols: 要查询的交易对列表
+            since_ms: 起始时间戳（毫秒）
+            limit: 每个交易对返回的最大记录数
+
+        Returns:
+            订单记录列表
+        """
+        exchange = await self._get_exchange()
+
+        # 优先使用 fetchClosedOrders，如果不支持则用 fetchOrders
+        has_closed = exchange.has.get("fetchClosedOrders")
+        has_orders = exchange.has.get("fetchOrders")
+
+        if not has_closed and not has_orders:
+            cprint(f"{self.exchange_id} does not support fetchClosedOrders/fetchOrders", "yellow")
+            return []
+
+        all_orders: List[Dict] = []
+
+        if not symbols:
+            return []
+
+        for symbol in symbols:
+            try:
+                normalized_symbol = self._normalize_symbol(symbol)
+
+                if has_closed:
+                    orders = await exchange.fetch_closed_orders(
+                        symbol=normalized_symbol,
+                        since=since_ms,
+                        limit=limit,
+                    )
+                else:
+                    orders = await exchange.fetch_orders(
+                        symbol=normalized_symbol,
+                        since=since_ms,
+                        limit=limit,
+                    )
+                    # 过滤只保留已完成的
+                    orders = [o for o in orders if o.get("status") in ("closed", "filled")]
+
+                for order in orders:
+                    order_info = {
+                        "symbol": symbol,
+                        "normalized_symbol": normalized_symbol,
+                        "order_id": order.get("id"),
+                        "type": order.get("type"),  # market/limit/stop_market/etc
+                        "side": order.get("side"),  # buy/sell
+                        "amount": order.get("amount"),
+                        "filled": order.get("filled"),
+                        "price": order.get("price"),
+                        "average": order.get("average"),  # 平均成交价
+                        "cost": order.get("cost"),
+                        "fee": order.get("fee"),
+                        "status": order.get("status"),
+                        "timestamp": order.get("timestamp"),
+                        "datetime": order.get("datetime"),
+                        "reduce_only": order.get("reduceOnly"),
+                        "info": order.get("info", {}),
+                    }
+                    all_orders.append(order_info)
+
+            except Exception as e:
+                cprint(f"Failed to fetch orders for {symbol}: {e}", "yellow")
+
+        # 按时间倒序排列
+        all_orders.sort(key=lambda o: o.get("timestamp", 0), reverse=True)
+
+        return all_orders
 
     async def close(self) -> None:
         """Close the exchange connection."""

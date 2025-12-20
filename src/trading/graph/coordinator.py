@@ -139,11 +139,13 @@ class GraphDecisionCoordinator:
                 compose_id=context["compose_id"],
                 strategy_id=context.get("strategy_id"),
                 features=[FeatureVector(**f) for f in context.get("features", [])],
+                feature_instructions=context.get("feature_instructions", ""),
                 portfolio=PortfolioView(**context["portfolio"]),
                 digest=context["digest"],
                 recent_decisions=context.get("recent_decisions", []),
                 pending_signals=context.get("pending_signals", {}),
                 history_summaries=context.get("history_summaries", []),
+                recent_exchange_orders=context.get("recent_exchange_orders", []),
             )
 
             # 调用 composer
@@ -332,6 +334,22 @@ class GraphDecisionCoordinator:
         # 构建摘要
         digest = self._digest_builder.build(self._history_recorder.get_records())
 
+        # LIVE 模式: 获取交易所最近订单历史
+        recent_exchange_orders: List[Dict] = []
+        if self._request.exchange_config.trading_mode == TradingMode.LIVE:
+            try:
+                # 获取最近 24 小时的订单，限制 10 条
+                since_ms = timestamp_ms - 24 * 60 * 60 * 1000
+                recent_exchange_orders = await self._execution_gateway.fetch_recent_orders(
+                    symbols=self._symbols,
+                    since_ms=since_ms,
+                    limit=10,
+                )
+                if recent_exchange_orders:
+                    cprint(f"获取到 {len(recent_exchange_orders)} 条最近订单历史", "white")
+            except Exception as e:
+                cprint(f"获取交易所订单历史失败: {e}", "yellow")
+
         # 获取当前保存的状态（用于获取 cycle_index 和 memories）
         saved_state = await self._graph.aget_state(self._thread_config)
         current_cycle = saved_state.values.get("cycle_index", 0) if saved_state.values else 0
@@ -342,8 +360,10 @@ class GraphDecisionCoordinator:
             "compose_id": compose_id,
             "timestamp_ms": timestamp_ms,
             "features": [f.model_dump(mode="json") for f in features],
+            "feature_instructions": pipeline_result.feature_instructions,
             "portfolio": portfolio.model_dump(mode="json"),
             "digest": digest.model_dump(mode="json"),
+            "recent_exchange_orders": recent_exchange_orders,
             "instructions": [],
             "rationale": None,
             "trades": [],

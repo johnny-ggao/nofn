@@ -3,7 +3,10 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 
-from ..models import Candle, FeaturesPipelineResult, FeatureVector
+from ..models import FeaturesPipelineResult, FeatureVector
+
+# 从 features/base.py 重新导出，保持向后兼容
+from .features.base import CandleBasedFeatureComputer
 
 
 class BaseFeaturesPipeline(ABC):
@@ -20,30 +23,6 @@ class BaseFeaturesPipeline(ABC):
             FeaturesPipelineResult with computed features
         """
         raise NotImplementedError
-
-
-class CandleBasedFeatureComputer(ABC):
-    """Abstract base class for candle-based feature computation.
-
-    Implementations compute technical indicators from OHLCV candle data.
-    """
-
-    @abstractmethod
-    def compute_features(
-        self,
-        candles: Optional[List[Candle]] = None,
-        meta: Optional[Dict[str, object]] = None,
-    ) -> List[FeatureVector]:
-        """Compute features from candle data.
-
-        Args:
-            candles: List of OHLCV candles
-            meta: Optional metadata to include in feature vectors
-
-        Returns:
-            List of FeatureVector objects with computed indicators
-        """
-        ...
 
 
 class MarketSnapshotFeatureComputer(ABC):

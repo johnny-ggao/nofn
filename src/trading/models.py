@@ -443,7 +443,7 @@ class FeatureVector(BaseModel):
 
 
 class CandleConfig(BaseModel):
-    """Configuration for candle data fetching."""
+    """Configuration for candle data fetching and feature computation."""
 
     interval: str = Field(
         ...,
@@ -453,6 +453,10 @@ class CandleConfig(BaseModel):
         ...,
         description="Number of candles to fetch",
         gt=0,
+    )
+    feature_computer: str = Field(
+        default="default",
+        description="Feature computer type to use for this interval",
     )
 
 
@@ -733,6 +737,12 @@ class ComposeContext(BaseModel):
     portfolio: PortfolioView
     digest: TradeDigest
 
+    # 特征说明（来自特征计算器）
+    feature_instructions: str = Field(
+        default="",
+        description="特征计算器提供的指标说明，帮助 LLM 理解数据含义"
+    )
+
     # 短期记忆（最近决策历史）
     recent_decisions: List[Dict[str, Any]] = Field(
         default_factory=list,
@@ -748,6 +758,12 @@ class ComposeContext(BaseModel):
         description="历史决策摘要，包含周期范围、统计和LLM生成的摘要内容"
     )
 
+    # 交易所真实订单历史（从交易所 API 获取）
+    recent_exchange_orders: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="从交易所获取的最近订单记录，包含真实的开平仓历史"
+    )
+
 
 class ComposeResult(BaseModel):
     """Result of a compose operation."""
@@ -760,6 +776,10 @@ class FeaturesPipelineResult(BaseModel):
     """Result of running a features pipeline."""
 
     features: List[FeatureVector]
+    feature_instructions: str = Field(
+        default="",
+        description="Feature instructions for LLM, collected from feature computers",
+    )
 
 
 @dataclass
